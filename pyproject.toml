@@ -1,0 +1,39 @@
+[project]
+name = "robot-student"
+version = "0.1.0"
+readme = "README.md"
+authors = [
+    { name = "Matthieu Coquet", email = "matthieu.coquet@outlook.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.0",
+]
+
+[project.scripts]
+robot-student = "robot_student:main"
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 140
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "B",
+    "E",
+    "F",
+    "I",
+    "SIM",
+    "UP",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
