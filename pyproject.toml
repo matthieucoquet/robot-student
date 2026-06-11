@@ -5,8 +5,18 @@ readme = "README.md"
 authors = [
     { name = "Matthieu Coquet", email = "matthieu.coquet@outlook.com" }
 ]
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "genesis-world>=1.0.0",
+    "tensordict>=0.13.0",
+    "torch>=2.12.0",
+]
+
+[project.optional-dependencies]
+#kimodo = [
+#    "huggingface_hub",
+#    "kimodo @ git+https://github.com/nv-tlabs/kimodo.git",
+# ]
 
 [dependency-groups]
 dev = [

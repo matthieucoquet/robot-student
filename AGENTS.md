@@ -16,23 +16,14 @@ Keep runtime code inside `src/robot_student/`. Avoid placing importable modules 
 
 - `uv sync` installs the project environment from `pyproject.toml` and `uv.lock`.
 - `uv run robot-student` runs the configured console script.
-- `uv run python -m robot_student` may be useful only after adding a `robot_student.__main__` module.
-- `uv build` builds source and wheel distributions using `uv_build`.
 - `uv run ruff format` formats Python code.
 - `uv run ruff check` lints Python code.
-- `uv run pytest` should be used once `pytest` is added as a development dependency and tests exist.
 
-The project requires Python `>=3.14`, as declared in `pyproject.toml`.
+The project requires Python `>=3.13`, as declared in `pyproject.toml`.
 
 ## Coding Style & Naming Conventions
 
-Use standard Python conventions:
-
-- Four spaces for indentation.
-- `snake_case` for modules, functions, variables, and test names.
-- `PascalCase` for classes.
-- `UPPER_SNAKE_CASE` for constants.
-- Keep public functions typed; prefer return annotations such as `-> None`.
+- Use standard PEP8 Python conventions
 - Don't use abreviations in names.
 
 Ruff is configured in `pyproject.toml` for formatting and linting. Run `uv run ruff format` before committing, and use `uv run ruff check` to catch lint issues.
