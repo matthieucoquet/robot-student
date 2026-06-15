@@ -2,7 +2,7 @@ from pathlib import Path
 
 # from robot_student.algorithm import PPO
 from robot_student.environment import CharacterEnvironment
-from robot_student.models import MLP
+from robot_student.model import MLP
 
 
 def main():
