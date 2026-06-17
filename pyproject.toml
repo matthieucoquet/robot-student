@@ -20,9 +20,6 @@ dev = [
 robot-student = "robot_student:main"
 
 [project.optional-dependencies]
-newton = [
-    "newton[sim]>=1.3.0",
-]
 genesis = [
     "genesis-world>=1.0.0",
 ]
