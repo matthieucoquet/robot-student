@@ -30,7 +30,7 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 140
-src = ["src", "tests"]
+src = ["src", "tests", "experiment"]
 
 [tool.ruff.lint]
 select = [

@@ -2,7 +2,7 @@
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.model import MLP
 
-from ..environment import setup_environment
+from .environment import setup_environment
 
 
 def main():

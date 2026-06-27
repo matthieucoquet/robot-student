@@ -1,16 +1,29 @@
 # Repository Guidelines
 
+## Project Goals
+
+The goal of this library is to implement Proximal Policy Optimization (PPO)
+for efficient training with the Genesis physics platform, with potential
+support for Newton later. The implementation roadmap is:
+
+1. Implement PPO.
+2. Build DeepMimic and BeyondMimic capabilities on top of the PPO
+   implementation.
+
+Implementation choices must prioritize training throughput. The PPO loop and
+its integration with Genesis should run as fast as possible, avoiding
+unnecessary synchronization, data transfers, allocations, and Python overhead
+in performance-critical paths.
+
 ## Project Structure & Module Organization
 
 This is a small Python package managed with `uv`.
 
 - `src/robot_student/` contains the importable package code.
-- `src/robot_student/__init__.py` currently exposes the console entry point, `main()`.
 - `pyproject.toml` defines package metadata, Python version requirements, build backend, and the `robot-student` script.
 - `README.md` is currently empty; update it when adding user-facing behavior.
-- Tests are not present yet. Add them under `tests/`, mirroring package modules where practical.
 
-Keep runtime code inside `src/robot_student/`. Avoid placing importable modules at the repository root.
+Library code is inside `src/robot_student/`. Configuration of training is also done in python in the `experiment` folder.
 
 ## Build, Test, and Development Commands
 
