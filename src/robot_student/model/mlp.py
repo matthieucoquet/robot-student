@@ -1,45 +1,38 @@
+from itertools import pairwise
 from math import prod
 
 import torch
-from tensordict import TensorDict, TensorDictBase
 from torch import nn
-
-from robot_student.environment.schema import EnvironmentSchema
 
 
 class MLP(nn.Module):
     def __init__(
         self,
-        schema: EnvironmentSchema,
-        observation_key: str,
-        action_key: str,
-        hidden_layer_size: int = 256,
+        input_shape: tuple[int, ...] | torch.Size,
+        output_shape: tuple[int, ...] | torch.Size,
+        hidden_layers: list[int],
         device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         super().__init__()
 
-        observation_schema = schema.observations[observation_key]
-        action_schema = schema.actions[action_key]
+        self._input_shape = input_shape
+        self._output_shape = output_shape
+        self._input_size = prod(self._input_shape)
+        self._output_size = prod(self._output_shape)
 
-        self.observation_key = observation_key
-        self.action_key = action_key
-        self.observation_shape = observation_schema.shape
-        self.action_shape = action_schema.shape
-        self.observation_size = prod(self.observation_shape)
-        self.action_size = prod(self.action_shape)
-        self.observation_data_type = observation_schema.data_type
-        self.action_data_type = action_schema.data_type
+        layer_sizes = [self._input_size, *hidden_layers, self._output_size]
+        layers: list[nn.Module] = []
+        for layer_index, (input_size, output_size) in enumerate(pairwise(layer_sizes)):
+            layers.append(nn.Linear(input_size, output_size, device=device, dtype=dtype))
+            if layer_index < len(layer_sizes) - 2:
+                layers.append(nn.ReLU())
 
-        self.network = nn.Sequential(
-            nn.Linear(self.observation_size, hidden_layer_size, device=device, dtype=self.observation_data_type),
-            nn.ReLU(),
-            nn.Linear(hidden_layer_size, self.action_size, device=device, dtype=self.action_data_type),
-        )
+        self.network = nn.Sequential(*layers)
 
-    def forward(self, observation: TensorDictBase) -> TensorDictBase:
-        batch_shape = observation.batch_size
-        flattened_observation = observation[self.observation_key].reshape((*batch_shape, self.observation_size))
-        action = self.network(flattened_observation.to(dtype=self.observation_data_type))
-        action = action.to(dtype=self.action_data_type).reshape((*batch_shape, *self.action_shape))
-
-        return TensorDict({self.action_key: action}, batch_size=batch_shape, device=action.device)
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        input_rank = len(self._input_shape)
+        batch_shape = input_tensor.shape[:-input_rank]
+        flattened_input = input_tensor.reshape((*batch_shape, self._input_size))
+        output = self.network(flattened_input)
+        return output.reshape((*batch_shape, *self._output_shape))

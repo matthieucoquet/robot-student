@@ -4,7 +4,12 @@ from torch import nn
 
 class RunningNormalization(nn.Module):
     def __init__(
-        self, shape: int | tuple[int, ...] | torch.Size, min_std: float = 1e-4, clip: float | None = None, device=None, dtype=None
+        self,
+        shape: tuple[int, ...] | torch.Size,
+        min_std: float = 1e-4,
+        clip: float | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ):
         super().__init__()
 
@@ -12,9 +17,9 @@ class RunningNormalization(nn.Module):
         self._min_var = min_std * min_std
 
         self.register_buffer("_count", torch.tensor(0, device=device, dtype=torch.long))
-        self.register_buffer("_mean", torch.zeros(self._shape, device=device, dtype=dtype))
-        self.register_buffer("_var", torch.ones(self._shape, device=device, dtype=dtype))
-        self.register_buffer("_std", torch.ones(self._shape, device=device, dtype=dtype))
+        self.register_buffer("_mean", torch.zeros(shape, device=device, dtype=dtype))
+        self.register_buffer("_var", torch.ones(shape, device=device, dtype=dtype))
+        self.register_buffer("_std", torch.ones(shape, device=device, dtype=dtype))
 
     @torch.no_grad()
     def update(self, x: torch.Tensor):

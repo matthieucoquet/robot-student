@@ -43,4 +43,10 @@ Ruff is configured in `pyproject.toml` for formatting and linting. Run `uv run r
 
 ## Agent-Specific Instructions
 
-Before editing, inspect existing files and preserve the minimal package structure. Do not remove user changes or generated lock files unless explicitly asked. Keep documentation synchronized with actual configured tools.
+Before editing, inspect existing files and preserve the minimal package structure. 
+
+Do not remove user changes or generated lock files unless explicitly asked. 
+
+Keep documentation synchronized with actual configured tools. 
+
+Do not overcomplicate code: keep it clean and minimal, and avoid handling every possible edge case unless needed.
