@@ -10,9 +10,9 @@ from robot_student.environment.schema import TensorSchema
 
 
 class GenesisEngine:
-    def __init__(self, cuda_backend: bool = False, show_viewer: bool = True) -> None:
+    def __init__(self, cuda_backend: bool = False, show_viewer: bool = True, seed: int | None = None) -> None:
         super().__init__()
-        gs.init(backend=gs.cuda if cuda_backend else gs.cpu)
+        gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
 
         self._scene = gs.Scene(show_viewer=show_viewer)
         self.characters = []

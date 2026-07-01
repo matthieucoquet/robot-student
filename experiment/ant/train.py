@@ -1,12 +1,15 @@
-# from robot_student.algorithm import PPO
+import logging
+
 import torch
 from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
+from robot_student.algorithm import PPO
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model import MLP, create_distribution
+from robot_student.model import MLP, ActorCritic, create_distribution
 from robot_student.model.normalizer import RunningNormalization
+from robot_student.util import configure_logging, set_seed
 
 from .environment import setup_environment
 
@@ -74,18 +77,23 @@ class ValueFunction(nn.Module):
 
 
 def main():
+    configure_logging(logging.DEBUG)
+
+    seed = 0
     cuda_training = True
-    engine = GenesisEngine(cuda_backend=cuda_training, show_viewer=True)
+    set_seed(seed)
+    engine = GenesisEngine(cuda_backend=cuda_training, show_viewer=True, seed=seed)
 
     environment = setup_environment(engine, environment_count=10)
 
     device = torch.device("cuda") if cuda_training else torch.device("cpu")
 
     policy = Policy(environment.schema, device=device)
-    # value_function = ValueFunction(environment.schema, device=device)
+    value_function = ValueFunction(environment.schema, device=device)
+    actor_critic = ActorCritic(policy=policy, value=value_function)
 
-    # algorithm = PPO()
-    # algorithm.train()
+    ppo = PPO(actor_critic)
+    ppo.train(iteration_count=10)
 
     observation = environment.reset()
     for _ in range(1000):
