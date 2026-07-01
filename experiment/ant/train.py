@@ -5,7 +5,7 @@ from torch import nn
 
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model import MLP
+from robot_student.model import MLP, create_distribution
 from robot_student.model.normalizer import RunningNormalization
 
 from .environment import setup_environment
@@ -33,10 +33,15 @@ class Policy(nn.Module):
         )
         self.body = MLP(input_shape=observation_schema.shape, output_shape=action_schema.shape, hidden_layers=[256], device=device)
 
-    def forward(self, observation: TensorDictBase) -> TensorDictBase:
+    def forward(self, observation: TensorDictBase) -> torch.distributions.Distribution:
         normalized_observation = self.normalizer(observation[self.observation_key])
-        action = self.body(normalized_observation)
+        mean = self.body(normalized_observation)
 
+        return create_distribution(mean)
+
+    def sample_action(self, observation: TensorDictBase) -> TensorDictBase:
+        distribution = self(observation)
+        action = distribution.sample()
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device)
 
 
@@ -84,7 +89,7 @@ def main():
 
     observation = environment.reset()
     for _ in range(1000):
-        action = policy(observation)
+        action = policy.sample_action(observation)
         observation = environment.step(action)
 
 
