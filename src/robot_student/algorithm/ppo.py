@@ -11,15 +11,16 @@ class PPO:
         self._rollout_buffer = None
         self._logger = logging.getLogger(__name__)
 
-    def train(self, iteration_count: int) -> None:
+    def train(self, iteration_count: int, checkpoint_interval: int) -> None:
         self._actor_critic.train()
 
-        for _ in range(iteration_count):
+        for i in range(iteration_count):
             self._collect_rollouts()
             self._logger.debug("PPO iteration")
 
-            # TODO: if some iteration pass, save the model
-            # do proper checkpointing to be able to resume training
+            if i % checkpoint_interval == 0:
+                # TODO: Save the model
+                pass
 
     @torch.no_grad()
     def _collect_rollouts(self) -> None:

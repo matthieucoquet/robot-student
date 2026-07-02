@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from robot_student.control_mode import PositionControlMode, PositionControlSettings
+from robot_student.engine.control_mode import PositionControlMode, PositionControlSettings
 from robot_student.environment import CharacterEnvironment
 
 

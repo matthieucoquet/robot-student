@@ -5,7 +5,7 @@ import torch
 from genesis.engine.entities import RigidEntity
 from tensordict import TensorDictBase
 
-from robot_student.control_mode import ControlMode, PositionControlMode
+from robot_student.engine.control_mode import ControlMode, PositionControlMode
 from robot_student.environment.schema import TensorSchema
 
 

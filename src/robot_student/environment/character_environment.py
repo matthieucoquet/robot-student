@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import torch
 from tensordict import TensorDict, TensorDictBase
 
-from robot_student.control_mode import ControlMode
+from robot_student.engine.control_mode import ControlMode
 from robot_student.environment.environment import Environment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
 

@@ -9,7 +9,7 @@ from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment.schema import EnvironmentSchema
 from robot_student.model import MLP, ActorCritic, create_distribution
 from robot_student.model.normalizer import RunningNormalization
-from robot_student.util import configure_logging, set_seed
+from robot_student.util import ExperimentStorage, configure_logging, set_seed
 
 from .environment import setup_environment
 
@@ -77,28 +77,29 @@ class ValueFunction(nn.Module):
 
 
 def main():
-    configure_logging(logging.DEBUG)
+    with ExperimentStorage("ant", run_name="ppo"):  # as experiment_storage:
+        configure_logging(logging.DEBUG)
 
-    seed = 0
-    cuda_training = True
-    set_seed(seed)
-    engine = GenesisEngine(cuda_backend=cuda_training, show_viewer=True, seed=seed)
+        seed = 0
+        cuda_training = True
+        set_seed(seed)
+        engine = GenesisEngine(cuda_backend=cuda_training, show_viewer=True, seed=seed)
 
-    environment = setup_environment(engine, environment_count=10)
+        environment = setup_environment(engine, environment_count=10)
 
-    device = torch.device("cuda") if cuda_training else torch.device("cpu")
+        device = torch.device("cuda") if cuda_training else torch.device("cpu")
 
-    policy = Policy(environment.schema, device=device)
-    value_function = ValueFunction(environment.schema, device=device)
-    actor_critic = ActorCritic(policy=policy, value=value_function)
+        policy = Policy(environment.schema, device=device)
+        value_function = ValueFunction(environment.schema, device=device)
+        actor_critic = ActorCritic(policy=policy, value=value_function)
 
-    ppo = PPO(actor_critic)
-    ppo.train(iteration_count=10)
+        ppo = PPO(actor_critic)
+        ppo.train(iteration_count=10, checkpoint_interval=5)
 
-    observation = environment.reset()
-    for _ in range(1000):
-        action = policy.sample_action(observation)
-        observation = environment.step(action)
+        observation = environment.reset()
+        for _ in range(1000):
+            action = policy.sample_action(observation)
+            observation = environment.step(action)
 
 
 if __name__ == "__main__":
