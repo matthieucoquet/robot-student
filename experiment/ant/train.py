@@ -77,7 +77,7 @@ class ValueFunction(nn.Module):
 
 
 def main():
-    with ExperimentStorage("ant", run_name="ppo"):  # as experiment_storage:
+    with ExperimentStorage("ant", run_name="ppo") as experiment_storage:
         configure_logging(logging.DEBUG)
 
         seed = 0
@@ -94,7 +94,7 @@ def main():
         actor_critic = ActorCritic(policy=policy, value=value_function)
 
         ppo = PPO(actor_critic)
-        ppo.train(iteration_count=10, checkpoint_interval=5)
+        ppo.train(experiment_storage, iteration_count=10, checkpoint_interval=5)
 
         observation = environment.reset()
         for _ in range(1000):
