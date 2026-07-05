@@ -7,7 +7,7 @@ from torch import nn
 from robot_student.algorithm import PPO
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model import MLP, ActorCritic, create_distribution
+from robot_student.model import MLP, create_distribution
 from robot_student.model.normalizer import RunningNormalization
 from robot_student.util import ExperimentStorage, configure_logging, set_seed
 
@@ -91,9 +91,17 @@ def main():
 
         policy = Policy(environment.schema, device=device)
         value_function = ValueFunction(environment.schema, device=device)
-        actor_critic = ActorCritic(policy=policy, value=value_function)
 
-        ppo = PPO(actor_critic)
+        learning_rate = 3e-4
+        policy_optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate)
+        value_optimizer = torch.optim.Adam(value_function.parameters(), lr=learning_rate)
+
+        ppo = PPO(
+            policy=policy,
+            value_function=value_function,
+            policy_optimizer=policy_optimizer,
+            value_optimizer=value_optimizer,
+        )
         ppo.train(experiment_storage, iteration_count=10, checkpoint_interval=5)
 
         observation = environment.reset()
