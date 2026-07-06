@@ -27,13 +27,22 @@ class CharacterEnvironment(Environment):
 
     def reset(self) -> TensorDictBase:
         self._engine.reset()
-
         return self._get_observation()
 
-    def step(self, action: TensorDictBase) -> TensorDictBase:
+    def reset_done(self, done: torch.Tensor) -> TensorDictBase:
+        environment_indices = done.reshape(-1)
+        self._engine.reset(environment_indices=environment_indices)
+        return self._get_observation()
+
+    def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor]:
         self._engine.step(action)
 
-        return self._get_observation()
+        observation = self._get_observation()
+        reward = torch.zeros(observation.batch_size, device=observation.device, dtype=torch.float32)
+        terminal = torch.zeros(observation.batch_size, device=observation.device, dtype=torch.bool)
+        truncated = torch.zeros(observation.batch_size, device=observation.device, dtype=torch.bool)
+
+        return observation, reward, terminal, truncated
 
     def _compute_schema(self) -> EnvironmentSchema:
         observation_type = torch.float32

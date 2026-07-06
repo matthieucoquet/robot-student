@@ -1,10 +1,15 @@
+import logging
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
+from typing import Self
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
+
+from .logging import configure_logging
+from .seed import set_seed
 
 ScalarMetric = int | float | torch.Tensor
 
@@ -41,18 +46,35 @@ class TensorboardStorage:
         self._writer.flush()
 
     def close(self) -> None:
+        self.flush()
         self._writer.close()
 
 
-class ExperimentStorage:
-    def __init__(self, experiment_name: str, run_name: str) -> None:
+class Experiment:
+    def __init__(
+        self,
+        experiment_name: str,
+        run_name: str,
+        seed: int = 0,
+        debug_level: int = logging.DEBUG,
+        device: torch.device | None = None,
+    ) -> None:
+        configure_logging(debug_level)
+        set_seed(seed)
+        self.seed = seed
+        self.device = device
+
         self._run_directory = Path.cwd() / "result" / experiment_name / f"{datetime.now().strftime('%Y_%m_%d_%H_%M')}_{run_name}"
         self._run_directory.mkdir(parents=True, exist_ok=True)
 
         self.checkpoint = CheckpointStorage(self._run_directory / "checkpoints")
         self.metrics = TensorboardStorage(self._run_directory / "tensorboard")
 
-    def __enter__(self) -> "ExperimentStorage":
+    @property
+    def is_on_cuda(self) -> bool:
+        return self.device is not None and self.device.type == "cuda"
+
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(

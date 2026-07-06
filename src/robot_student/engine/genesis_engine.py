@@ -36,8 +36,8 @@ class GenesisEngine:
             character.control_pd(action)
         self._scene.step()
 
-    def reset(self) -> None:
-        self._scene.reset()
+    def reset(self, environment_indices: torch.Tensor | None = None) -> None:
+        self._scene.reset(envs_idx=environment_indices)
 
 
 class GenesisCharacter:
@@ -91,11 +91,11 @@ class GenesisCharacter:
             bounds=(lower_bounds, upper_bounds),
         )
 
-    def get_root_position(self):
-        return self._character.get_qpos()
+    def get_root_position(self, environment_indices: torch.Tensor | None = None):
+        return self._character.get_qpos(envs_idx=environment_indices)
 
-    def get_joint_positions(self):
-        return self._character.get_dofs_position()
+    def get_joint_positions(self, environment_indices: torch.Tensor | None = None):
+        return self._character.get_dofs_position(envs_idx=environment_indices)
 
     def control_pd(self, action: TensorDictBase) -> None:
         self._character.control_dofs_position(action["control"], self._controlled_dof_indices)
