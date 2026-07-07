@@ -53,12 +53,30 @@ class PPO:
     def _collect_rollouts(self) -> None:
         self._rollout_buffer.reset()
         for _ in range(self._rollout_buffer.rollout_length):
-            action, _log_probability = self._policy.sample_action_with_log_prob(self._observations)
+            action, log_probability = self._policy.sample_action_with_log_prob(self._observations)
 
-            next_observations, _reward, terminal, truncated = self._environment.step(action)
+            next_observations, reward, terminal, truncated = self._environment.step(action)
 
-            # TODO should only add to the rollout the minimum data, not value and stuff
-            self._observations = next_observations
+            self._rollout_buffer.add_transition(
+                observation=self._observations,
+                action=action,
+                log_probability=log_probability,
+                reward=reward,
+                terminal=terminal,
+                truncated=truncated,
+                next_observation=next_observations,
+            )
             done = torch.logical_or(terminal, truncated)
-            # Store to buffer here
             self._observations = self._environment.reset_done(done)
+
+        self._finalize_rollouts()
+
+    def _finalize_rollouts(self) -> None:
+        observations = self._rollout_buffer.observations
+        next_observations = self._rollout_buffer.next_observations
+
+        self._policy.update_normalizer(next_observations)
+        self._value_function.update_normalizer(next_observations)
+
+        next_values = self._value_function(next_observations)
+        values = self._value_function(observations)

@@ -32,8 +32,8 @@ class Policy(nn.Module):
     def forward(self, observation: TensorDictBase) -> torch.distributions.Distribution:
         normalized_observation = self.normalizer(observation[self.observation_key])
         mean = self.body(normalized_observation)
-
-        return create_distribution(mean)
+        # TODO take into account the action space bounds to compute the standard deviation, check mimickit
+        return create_distribution(mean, standard_deviation=0.1)
 
     def sample_action(self, observation: TensorDictBase) -> TensorDictBase:
         distribution = self(observation)
@@ -45,6 +45,9 @@ class Policy(nn.Module):
         action = distribution.sample()
         log_prob = distribution.log_prob(action)
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device), log_prob
+
+    def update_normalizer(self, observation: TensorDictBase) -> None:
+        self.normalizer.update(observation[self.observation_key])
 
 
 class ValueFunction(nn.Module):
@@ -73,3 +76,6 @@ class ValueFunction(nn.Module):
         action = self.body(normalized_observation)
 
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device)
+
+    def update_normalizer(self, observation: TensorDictBase) -> None:
+        self.normalizer.update(observation[self.observation_key])
