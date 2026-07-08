@@ -5,10 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Pendulum",
+            "name": "Ant",
             "type": "debugpy",
             "request": "launch",
-            "program": "playground/pendulum.py",
+            "module": "experiment.ant.train",
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python",
             "console": "integratedTerminal"
         }
     ]

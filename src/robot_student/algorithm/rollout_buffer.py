@@ -18,44 +18,43 @@ class RolloutBuffer:
         device: torch.device | str | None = None,
         scalar_data_type: torch.dtype = torch.float32,
     ) -> None:
-        self._rollout_length = rollout_length
-        self._environment_count = environment_count
-        self._batch_shape = torch.Size((rollout_length, environment_count))
-        self._device = device
+        self.rollout_length = rollout_length
+        self.environment_count = environment_count
+        self.batch_shape = torch.Size((rollout_length, environment_count))
+        self.device = device
 
-        self._observations = TensorDict(
+        self.observations = TensorDict(
             {
                 key: torch.empty(
-                    (*self._batch_shape, *tensor_schema.shape),
-                    device=self._device,
+                    (*self.batch_shape, *tensor_schema.shape),
+                    device=self.device,
                     dtype=tensor_schema.data_type,
                 )
                 for key, tensor_schema in schema.observations.items()
             },
-            batch_size=self._batch_shape,
-            device=self._device,
+            batch_size=self.batch_shape,
+            device=self.device,
         )
-        self._next_observations = self._observations.clone()
-        self._actions = TensorDict(
+        self.next_observations = self.observations.clone()
+        self.actions = TensorDict(
             {
                 key: torch.empty(
-                    (*self._batch_shape, *tensor_schema.shape),
-                    device=self._device,
+                    (*self.batch_shape, *tensor_schema.shape),
+                    device=self.device,
                     dtype=tensor_schema.data_type,
                 )
                 for key, tensor_schema in schema.actions.items()
             },
-            batch_size=self._batch_shape,
-            device=self._device,
+            batch_size=self.batch_shape,
+            device=self.device,
         )
 
-        self._rewards = torch.empty(self._batch_shape, device=self._device, dtype=scalar_data_type)
-        self._terminals = torch.empty(self._batch_shape, device=self._device, dtype=torch.bool)
-        self._truncated = self._terminals.clone()
-        # self._values = self._rewards.clone()
-        self._log_probabilities = self._rewards.clone()
-        # self._advantages = torch.empty(self._batch_shape, device=self._device, dtype=scalar_data_type)
-        # self._returns = torch.empty(self._batch_shape, device=self._device, dtype=scalar_data_type)
+        self.rewards = torch.empty(self.batch_shape, device=self.device, dtype=scalar_data_type)
+        self.terminals = torch.empty(self.batch_shape, device=self.device, dtype=torch.bool)
+        self.truncated = torch.empty_like(self.terminals)
+        self.log_probabilities = torch.empty_like(self.rewards)
+        self.advantages = torch.empty_like(self.rewards)
+        self.returns = torch.empty_like(self.rewards)
 
         self._next_step_index = 0
 
@@ -75,11 +74,11 @@ class RolloutBuffer:
         next_observation: TensorDictBase,
     ) -> None:
         step_index = self._next_step_index
-        for key, storage in self._observations.items():
+        for key, storage in self.observations.items():
             storage[step_index].copy_(observation[key])
-        for key, storage in self._next_observations.items():
+        for key, storage in self.next_observations.items():
             storage[step_index].copy_(next_observation[key])
-        for key, storage in self._actions.items():
+        for key, storage in self.actions.items():
             storage[step_index].copy_(action[key])
 
         self.rewards[step_index].copy_(reward)

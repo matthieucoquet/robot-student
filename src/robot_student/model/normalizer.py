@@ -23,8 +23,14 @@ class RunningNormalization(nn.Module):
 
     @torch.no_grad()
     def update(self, x: torch.Tensor):
-        count_added = x.shape[0]
-        var_added, mean_added = torch.var_mean(x, dim=0, correction=0)
+        batch_dimension_count = x.ndim - self._mean.ndim
+        batch_shape = x.shape[:batch_dimension_count]
+        count_added = 1
+        for size in batch_shape:
+            count_added *= size
+
+        batch_dimensions = tuple(range(batch_dimension_count))
+        var_added, mean_added = torch.var_mean(x, dim=batch_dimensions, correction=0)
 
         total_count = self._count + count_added
         rate = count_added / total_count

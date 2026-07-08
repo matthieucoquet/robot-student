@@ -71,11 +71,9 @@ class ValueFunction(nn.Module):
         )
         self.body = MLP(input_shape=observation_schema.shape, output_shape=[1], hidden_layers=[256], device=device)
 
-    def forward(self, observation: TensorDictBase) -> TensorDictBase:
+    def forward(self, observation: TensorDictBase) -> torch.Tensor:
         normalized_observation = self.normalizer(observation[self.observation_key])
-        action = self.body(normalized_observation)
-
-        return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device)
+        return self.body(normalized_observation).squeeze(-1)
 
     def update_normalizer(self, observation: TensorDictBase) -> None:
         self.normalizer.update(observation[self.observation_key])
