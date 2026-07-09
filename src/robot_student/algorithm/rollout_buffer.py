@@ -61,6 +61,42 @@ class RolloutBuffer:
     def reset(self) -> None:
         self._next_step_index = 0
 
+    @property
+    def flat_observations(self) -> TensorDictBase:
+        return self.observations.reshape(-1)
+
+    @property
+    def flat_next_observations(self) -> TensorDictBase:
+        return self.next_observations.reshape(-1)
+
+    @property
+    def flat_actions(self) -> TensorDictBase:
+        return self.actions.reshape(-1)
+
+    @property
+    def flat_rewards(self) -> torch.Tensor:
+        return self.rewards.reshape(-1)
+
+    @property
+    def flat_terminals(self) -> torch.Tensor:
+        return self.terminals.reshape(-1)
+
+    @property
+    def flat_truncated(self) -> torch.Tensor:
+        return self.truncated.reshape(-1)
+
+    @property
+    def flat_log_probabilities(self) -> torch.Tensor:
+        return self.log_probabilities.reshape(-1)
+
+    @property
+    def flat_advantages(self) -> torch.Tensor:
+        return self.advantages.reshape(-1)
+
+    @property
+    def flat_returns(self) -> torch.Tensor:
+        return self.returns.reshape(-1)
+
     @torch.no_grad()
     def add_transition(
         self,
@@ -87,3 +123,14 @@ class RolloutBuffer:
         self.log_probabilities[step_index].copy_(log_probability)
 
         self._next_step_index += 1
+
+    def get_minibatches(self, batch_size: int, epoch_count: int):
+        total_batch_size = self.batch_shape.numel()
+
+        minibatch_size = batch_size * self.environment_count
+
+        for _ in range(epoch_count):
+            indices = torch.randperm(total_batch_size, device=self.device)
+            for start in range(0, total_batch_size, minibatch_size):
+                end = start + minibatch_size
+                yield indices[start:end]

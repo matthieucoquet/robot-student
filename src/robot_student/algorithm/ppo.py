@@ -20,6 +20,11 @@ class PPO:
         discount: float = 0.99,
         td_lambda: float = 0.95,
         advantage_clip: float = 4.0,
+        value_batch_size: int = 2,
+        value_epoch_count: int = 2,
+        policy_batch_size: int = 4,
+        policy_epoch_count: int = 5,
+        metric_log_interval: int = 10,
     ) -> None:
         self._environment = environment
         self._policy = policy
@@ -30,6 +35,11 @@ class PPO:
         self._discount = discount
         self._lambda = td_lambda
         self._advantage_clip = advantage_clip
+        self._value_batch_size = value_batch_size
+        self._value_epoch_count = value_epoch_count
+        self._policy_batch_size = policy_batch_size
+        self._policy_epoch_count = policy_epoch_count
+        self._metric_log_interval = metric_log_interval
         self._logger = logging.getLogger(__name__)
 
     def train(self, experiment_storage, iteration_count: int, checkpoint_interval: int) -> None:
@@ -40,9 +50,12 @@ class PPO:
 
         for i in range(iteration_count):
             self._collect_rollouts()
-            self._update_models()
+            value_loss = self._update_value_function()
+            policy_loss = self._update_policy()
 
-            experiment_storage.metrics.log_scalar("test", i * 0.1, i)
+            if i % self._metric_log_interval == 0:
+                experiment_storage.metrics.log_scalar("value_loss", value_loss, i)
+                experiment_storage.metrics.log_scalar("policy_loss", policy_loss, i)
 
             if i % checkpoint_interval == 0:
                 experiment_storage.checkpoint.save(
@@ -108,5 +121,29 @@ class PPO:
         advantages.div_(advantage_std)
         advantages.clamp_(-self._advantage_clip, self._advantage_clip)
 
-    def _update_models(self) -> None:
+    def _update_value_function(self) -> float:
+        observations = self._rollout_buffer.flat_observations
+        returns = self._rollout_buffer.flat_returns
+
+        log_loss_sum = torch.zeros((), device=returns.device)
+
+        for minibatch_indices in self._rollout_buffer.get_minibatches(self._value_batch_size, self._value_epoch_count):
+            values = self._value_function(observations[minibatch_indices])
+            loss = torch.nn.functional.mse_loss(values, returns[minibatch_indices])
+
+            self._value_optimizer.zero_grad()
+            loss.backward()
+            self._value_optimizer.step()
+
+            log_loss_sum += loss.detach()
+
+        log_loss_count = self._rollout_buffer.rollout_length / self._value_batch_size
+        return (log_loss_sum / log_loss_count).item()
+
+    def _update_policy(self) -> float:
         pass
+        # observations = self._rollout_buffer.flat_observations
+        # actions = self._rollout_buffer.flat_actions
+
+        # for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
+        #     log_probability = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])

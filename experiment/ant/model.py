@@ -46,6 +46,10 @@ class Policy(nn.Module):
         log_prob = distribution.log_prob(action)
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device), log_prob
 
+    def log_prob(self, observation: TensorDictBase, action: TensorDictBase) -> torch.Tensor:
+        distribution = self(observation)
+        return distribution.log_prob(action[self.action_key])
+
     def update_normalizer(self, observation: TensorDictBase) -> None:
         self.normalizer.update(observation[self.observation_key])
 
