@@ -25,6 +25,7 @@ class PPO:
         policy_batch_size: int = 4,
         policy_epoch_count: int = 5,
         metric_log_interval: int = 10,
+        clip_ratio: float = 0.2,
     ) -> None:
         self._environment = environment
         self._policy = policy
@@ -40,6 +41,8 @@ class PPO:
         self._policy_batch_size = policy_batch_size
         self._policy_epoch_count = policy_epoch_count
         self._metric_log_interval = metric_log_interval
+        self._clip_ratio = clip_ratio
+
         self._logger = logging.getLogger(__name__)
 
     def train(self, experiment_storage, iteration_count: int, checkpoint_interval: int) -> None:
@@ -141,9 +144,30 @@ class PPO:
         return (log_loss_sum / log_loss_count).item()
 
     def _update_policy(self) -> float:
-        pass
-        # observations = self._rollout_buffer.flat_observations
-        # actions = self._rollout_buffer.flat_actions
+        observations = self._rollout_buffer.flat_observations
+        actions = self._rollout_buffer.flat_actions
+        old_log_probabilities = self._rollout_buffer.flat_log_probabilities
+        advantages = self._rollout_buffer.flat_advantages
 
-        # for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
-        #     log_probability = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
+        log_loss_sum = torch.zeros((), device=observations.device)
+
+        for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
+            log_probability = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
+
+            ratio = torch.exp(log_probability - old_log_probabilities[minibatch_indices])
+            loss_0 = -advantages[minibatch_indices] * ratio
+            loss_1 = -advantages[minibatch_indices] * torch.clamp(ratio, 1.0 - self._clip_ratio, 1.0 + self._clip_ratio)
+            loss = torch.max(loss_0, loss_1).mean()
+
+            # TODO: log additional metrics such as IS ratio, clipped ratio...
+
+            # TODO: implement action bound loss similar to mimickit
+
+            self._policy_optimizer.zero_grad()
+            loss.backward()
+            self._policy_optimizer.step()
+
+            log_loss_sum += loss.detach()
+
+        log_loss_count = self._rollout_buffer.rollout_length / self._policy_batch_size
+        return (log_loss_sum / log_loss_count).item()
