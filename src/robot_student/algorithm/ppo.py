@@ -53,12 +53,13 @@ class PPO:
 
         for i in range(iteration_count):
             self._collect_rollouts()
-            value_loss = self._update_value_function()
-            policy_loss = self._update_policy()
+            metrics = self._update_value_function()
+            metrics |= self._update_policy()
+            with torch.no_grad():
+                self._policy.update_normalizer(self._rollout_buffer.next_observations)
 
             if i % self._metric_log_interval == 0:
-                experiment_storage.metrics.log_scalar("value_loss", value_loss, i)
-                experiment_storage.metrics.log_scalar("policy_loss", policy_loss, i)
+                experiment_storage.metrics.log_scalars(metrics, i)
 
             if i % checkpoint_interval == 0:
                 experiment_storage.checkpoint.save(
@@ -102,9 +103,6 @@ class PPO:
         rewards = self._rollout_buffer.rewards
         advantages = self._rollout_buffer.advantages
 
-        self._policy.update_normalizer(next_observations)
-        self._value_function.update_normalizer(next_observations)
-
         next_values = self._value_function(next_observations)
         next_values.masked_fill_(terminals, 0.0)
         values = self._value_function(observations)
@@ -124,11 +122,14 @@ class PPO:
         advantages.div_(advantage_std)
         advantages.clamp_(-self._advantage_clip, self._advantage_clip)
 
-    def _update_value_function(self) -> float:
+        self._value_function.update_normalizer(observations)
+
+    def _update_value_function(self) -> dict[str, torch.Tensor]:
         observations = self._rollout_buffer.flat_observations
         returns = self._rollout_buffer.flat_returns
 
         log_loss_sum = torch.zeros((), device=returns.device)
+        minibatch_count = 0
 
         for minibatch_indices in self._rollout_buffer.get_minibatches(self._value_batch_size, self._value_epoch_count):
             values = self._value_function(observations[minibatch_indices])
@@ -139,27 +140,28 @@ class PPO:
             self._value_optimizer.step()
 
             log_loss_sum += loss.detach()
+            minibatch_count += 1
 
-        log_loss_count = self._rollout_buffer.rollout_length / self._value_batch_size
-        return (log_loss_sum / log_loss_count).item()
+        return {"train/value_loss": log_loss_sum / minibatch_count}
 
-    def _update_policy(self) -> float:
+    def _update_policy(self) -> dict[str, torch.Tensor]:
         observations = self._rollout_buffer.flat_observations
         actions = self._rollout_buffer.flat_actions
         old_log_probabilities = self._rollout_buffer.flat_log_probabilities
         advantages = self._rollout_buffer.flat_advantages
 
         log_loss_sum = torch.zeros((), device=observations.device)
+        log_clip_fraction_sum = torch.zeros((), device=observations.device)
+        minibatch_count = 0
 
         for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
             log_probability = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
 
             ratio = torch.exp(log_probability - old_log_probabilities[minibatch_indices])
-            loss_0 = -advantages[minibatch_indices] * ratio
-            loss_1 = -advantages[minibatch_indices] * torch.clamp(ratio, 1.0 - self._clip_ratio, 1.0 + self._clip_ratio)
-            loss = torch.max(loss_0, loss_1).mean()
-
-            # TODO: log additional metrics such as IS ratio, clipped ratio...
+            clip_fraction = ((ratio - 1.0).abs() > self._clip_ratio).float().mean()
+            unclipped_loss = -advantages[minibatch_indices] * ratio
+            clipped_loss = -advantages[minibatch_indices] * torch.clamp(ratio, 1.0 - self._clip_ratio, 1.0 + self._clip_ratio)
+            loss = torch.max(unclipped_loss, clipped_loss).mean()
 
             # TODO: implement action bound loss similar to mimickit
 
@@ -168,6 +170,10 @@ class PPO:
             self._policy_optimizer.step()
 
             log_loss_sum += loss.detach()
+            log_clip_fraction_sum += clip_fraction.detach()
+            minibatch_count += 1
 
-        log_loss_count = self._rollout_buffer.rollout_length / self._policy_batch_size
-        return (log_loss_sum / log_loss_count).item()
+        return {
+            "train/policy_loss": log_loss_sum / minibatch_count,
+            "train/policy_clip_fraction": log_clip_fraction_sum / minibatch_count,
+        }

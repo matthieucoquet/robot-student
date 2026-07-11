@@ -36,6 +36,8 @@ class TensorboardStorage:
         self._writer = SummaryWriter(log_dir=log_directory)
 
     def log_scalar(self, name: str, value: ScalarMetric, iteration: int) -> None:
+        if isinstance(value, torch.Tensor):
+            value = value.item()
         self._writer.add_scalar(name, value, iteration)
 
     def log_scalars(self, metrics: Mapping[str, ScalarMetric], iteration: int) -> None:

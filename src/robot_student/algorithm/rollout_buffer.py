@@ -125,6 +125,9 @@ class RolloutBuffer:
         self._next_step_index += 1
 
     def get_minibatches(self, batch_size: int, epoch_count: int):
+        if self.rollout_length % batch_size != 0:
+            raise ValueError(f"rollout_length ({self.rollout_length}) must be divisible by batch_size ({batch_size})")
+
         total_batch_size = self.batch_shape.numel()
 
         minibatch_size = batch_size * self.environment_count

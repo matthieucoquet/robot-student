@@ -30,6 +30,8 @@ class CharacterEnvironment(Environment):
         return self._get_observation()
 
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
+        # TODO need to profile to see if this is a bottleneck
+        # Could optimize or do some kind of manual reset when doing some deep-mimic style learning
         environment_indices = done.reshape(-1)
         self._engine.reset(environment_indices=environment_indices)
         return self._get_observation()
