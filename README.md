@@ -1,5 +1,21 @@
 # robot-student
 
-WIP library for robotic RL learning in simulation.
-* The first version will be an implementation of PPO using the Genesis physics engine.
-* Then, I'll see, but I'd like to add imitation learning algorithm like Deep-Mimic/Beyond-Mimic
+Really early PPO training experiments for robotic reinforcement learning in Genesis.
+
+## Setup
+
+Install dependencies with uv:
+
+```sh
+uv sync
+```
+
+## Train Ant
+
+Launch the Ant PPO experiment with:
+
+```sh
+uv run python -m experiment.ant.train
+```
+
+The current Ant experiment uses Genesis with CUDA and opens the viewer.
