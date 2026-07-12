@@ -82,6 +82,7 @@ class GenesisCharacter:
         match self._control_mode:
             case PositionControlMode():
                 lower_bounds, upper_bounds = self._character.get_dofs_limit(self._controlled_dof_indices)
+                lower_bounds, upper_bounds = _scale_action_limits(lower_bounds, upper_bounds, self._control_mode.action_limit_scale)
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
@@ -99,3 +100,16 @@ class GenesisCharacter:
 
     def control_pd(self, action: TensorDictBase) -> None:
         self._character.control_dofs_position(action["control"], self._controlled_dof_indices)
+
+
+def _scale_action_limits(
+    lower_bounds: torch.Tensor,
+    upper_bounds: torch.Tensor,
+    action_limit_scale: float | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if action_limit_scale is None:
+        return lower_bounds, upper_bounds
+
+    bound_centers = (lower_bounds + upper_bounds) * 0.5
+    bound_half_ranges = (upper_bounds - lower_bounds) * (0.5 * action_limit_scale)
+    return bound_centers - bound_half_ranges, bound_centers + bound_half_ranges
