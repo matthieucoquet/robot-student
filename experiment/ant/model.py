@@ -21,7 +21,9 @@ class Policy(nn.Module):
 
         observation_schema = schema.observations[self.observation_key]
         action_schema = schema.actions[self.action_key]
-        self._action_bounds = action_schema.bounds
+        lower_bounds, upper_bounds = action_schema.bounds
+        self.register_buffer("action_lower_bounds", lower_bounds.to(device=device, dtype=action_schema.data_type))
+        self.register_buffer("action_upper_bounds", upper_bounds.to(device=device, dtype=action_schema.data_type))
         self.action_bound_enforcement = action_bound_enforcement
 
         self.normalizer = RunningNormalization(
@@ -32,31 +34,40 @@ class Policy(nn.Module):
         )
         self.body = MLP(input_shape=observation_schema.shape, output_shape=action_schema.shape, hidden_layers=[256], device=device)
 
-    def forward(self, observation: TensorDictBase) -> torch.distributions.Distribution:
+    @property
+    def action_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.action_lower_bounds, self.action_upper_bounds
+
+    def forward(self, observation: TensorDictBase) -> torch.Tensor:
         normalized_observation = self.normalizer(observation[self.observation_key])
-        mean = self.body(normalized_observation)
+        return self.body(normalized_observation)
+
+    def create_distribution(self, mean: torch.Tensor) -> torch.distributions.Distribution:
         # TODO take into account the action space bounds to compute the standard deviation, check mimickit
         return create_distribution(
             mean,
             standard_deviation=0.1,
             action_bound_enforcement=self.action_bound_enforcement,
-            bounds=self._action_bounds,
+            bounds=self.action_bounds,
         )
 
     def sample_action(self, observation: TensorDictBase) -> TensorDictBase:
-        distribution = self(observation)
+        mean = self(observation)
+        distribution = self.create_distribution(mean)
         action = distribution.sample()
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device)
 
     def sample_action_with_log_prob(self, observation: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor]:
-        distribution = self(observation)
+        mean = self(observation)
+        distribution = self.create_distribution(mean)
         action = distribution.sample()
         log_prob = distribution.log_prob(action)
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device), log_prob
 
-    def log_prob(self, observation: TensorDictBase, action: TensorDictBase) -> torch.Tensor:
-        distribution = self(observation)
-        return distribution.log_prob(action[self.action_key])
+    def log_prob(self, observation: TensorDictBase, action: TensorDictBase) -> tuple[torch.Tensor, torch.Tensor]:
+        mean = self(observation)
+        distribution = self.create_distribution(mean)
+        return distribution.log_prob(action[self.action_key]), mean
 
     def update_normalizer(self, observation: TensorDictBase) -> None:
         self.normalizer.update(observation[self.observation_key])

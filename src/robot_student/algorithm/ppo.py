@@ -154,18 +154,24 @@ class PPO:
 
         log_loss_sum = torch.zeros((), device=observations.device)
         log_clip_fraction_sum = torch.zeros((), device=observations.device)
+        action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.ADDITIONAL_LOSS
+        if action_bound_loss_enabled:
+            log_action_bound_loss_sum = torch.zeros((), device=observations.device)
         minibatch_count = 0
 
         for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
-            log_probability = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
+            log_probability, action_mean = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
 
             ratio = torch.exp(log_probability - old_log_probabilities[minibatch_indices])
             clip_fraction = ((ratio - 1.0).abs() > self._clip_ratio).float().mean()
             unclipped_loss = -advantages[minibatch_indices] * ratio
             clipped_loss = -advantages[minibatch_indices] * torch.clamp(ratio, 1.0 - self._clip_ratio, 1.0 + self._clip_ratio)
-            loss = torch.max(unclipped_loss, clipped_loss).mean()
-            if self._action_bound_enforcement is ActionBoundEnforcement.ADDITIONAL_LOSS:
-                loss = loss + self._compute_action_bound_loss(actions[minibatch_indices])
+            loss = torch.max(unclipped_loss, clipped_loss)
+            if action_bound_loss_enabled:
+                action_bound_loss = self._compute_action_bound_loss(action_mean)
+                loss = loss + action_bound_loss
+                log_action_bound_loss_sum += action_bound_loss.detach().mean()
+            loss = loss.mean()
 
             self._policy_optimizer.zero_grad()
             loss.backward()
@@ -175,12 +181,18 @@ class PPO:
             log_clip_fraction_sum += clip_fraction.detach()
             minibatch_count += 1
 
-        return {
+        metrics = {
             "train/policy_loss": log_loss_sum / minibatch_count,
             "train/policy_clip_fraction": log_clip_fraction_sum / minibatch_count,
         }
+        if action_bound_loss_enabled:
+            metrics["train/action_bound_loss"] = log_action_bound_loss_sum / minibatch_count
+        return metrics
 
-    def _compute_action_bound_loss(self, actions) -> torch.Tensor:
-        # TODO: implement action bound loss similar to mimickit.
-        first_action = next(iter(actions.values()))
-        return torch.zeros((), device=first_action.device, dtype=first_action.dtype)
+    def _compute_action_bound_loss(self, action_mean: torch.Tensor) -> torch.Tensor:
+        lower_bounds, upper_bounds = self._policy.action_bounds
+
+        lower_bound_violation = torch.clamp_max(action_mean - lower_bounds, 0.0)
+        upper_bound_violation = torch.clamp_min(action_mean - upper_bounds, 0.0)
+        violation = torch.sum(torch.square(lower_bound_violation), dim=-1) + torch.sum(torch.square(upper_bound_violation), dim=-1)
+        return violation

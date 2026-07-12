@@ -23,8 +23,6 @@ def create_distribution(
         distribution_transforms = [transforms.TanhTransform(cache_size=1)]
         if bounds is not None:
             lower_bounds, upper_bounds = bounds
-            lower_bounds = lower_bounds.to(device=mean.device, dtype=mean.dtype)
-            upper_bounds = upper_bounds.to(device=mean.device, dtype=mean.dtype)
             half_range = (upper_bounds - lower_bounds) * 0.5
             center = (upper_bounds + lower_bounds) * 0.5
             distribution_transforms.append(transforms.AffineTransform(loc=center, scale=half_range))
