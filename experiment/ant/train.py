@@ -5,6 +5,7 @@ import torch
 from robot_student.algorithm import PPO
 from robot_student.algorithm.rollout_buffer import RolloutBuffer
 from robot_student.engine.genesis_engine import GenesisEngine
+from robot_student.model import ActionBoundEnforcement
 from robot_student.util import Experiment
 
 from .environment import setup_environment
@@ -27,7 +28,13 @@ class AntExperiment(Experiment):
         environment_count = 10
         environment = setup_environment(engine, environment_count=environment_count)
 
-        policy = Policy(environment.schema, device=self.device)
+        action_bound_enforcement = ActionBoundEnforcement.ADDITIONAL_LOSS
+
+        policy = Policy(
+            environment.schema,
+            device=self.device,
+            action_bound_enforcement=action_bound_enforcement,
+        )
         value_function = ValueFunction(environment.schema, device=self.device)
 
         learning_rate = 3e-4

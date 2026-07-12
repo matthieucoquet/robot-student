@@ -3,7 +3,7 @@ from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model import MLP, create_distribution
+from robot_student.model import MLP, ActionBoundEnforcement, create_distribution
 from robot_student.model.normalizer import RunningNormalization
 
 
@@ -12,6 +12,7 @@ class Policy(nn.Module):
         self,
         schema: EnvironmentSchema,
         device: torch.device | str | None = None,
+        action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.ADDITIONAL_LOSS,
     ) -> None:
         super().__init__()
 
@@ -20,6 +21,8 @@ class Policy(nn.Module):
 
         observation_schema = schema.observations[self.observation_key]
         action_schema = schema.actions[self.action_key]
+        self._action_bounds = action_schema.bounds
+        self.action_bound_enforcement = action_bound_enforcement
 
         self.normalizer = RunningNormalization(
             observation_schema.shape,
@@ -33,7 +36,12 @@ class Policy(nn.Module):
         normalized_observation = self.normalizer(observation[self.observation_key])
         mean = self.body(normalized_observation)
         # TODO take into account the action space bounds to compute the standard deviation, check mimickit
-        return create_distribution(mean, standard_deviation=0.1)
+        return create_distribution(
+            mean,
+            standard_deviation=0.1,
+            action_bound_enforcement=self.action_bound_enforcement,
+            bounds=self._action_bounds,
+        )
 
     def sample_action(self, observation: TensorDictBase) -> TensorDictBase:
         distribution = self(observation)

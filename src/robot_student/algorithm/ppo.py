@@ -6,6 +6,7 @@ from torch.optim import Optimizer
 
 from robot_student.algorithm.rollout_buffer import RolloutBuffer
 from robot_student.environment.environment import Environment
+from robot_student.model import ActionBoundEnforcement
 
 
 class PPO:
@@ -42,6 +43,7 @@ class PPO:
         self._policy_epoch_count = policy_epoch_count
         self._metric_log_interval = metric_log_interval
         self._clip_ratio = clip_ratio
+        self._action_bound_enforcement = self._policy.action_bound_enforcement
 
         self._logger = logging.getLogger(__name__)
 
@@ -162,8 +164,8 @@ class PPO:
             unclipped_loss = -advantages[minibatch_indices] * ratio
             clipped_loss = -advantages[minibatch_indices] * torch.clamp(ratio, 1.0 - self._clip_ratio, 1.0 + self._clip_ratio)
             loss = torch.max(unclipped_loss, clipped_loss).mean()
-
-            # TODO: implement action bound loss similar to mimickit
+            if self._action_bound_enforcement is ActionBoundEnforcement.ADDITIONAL_LOSS:
+                loss = loss + self._compute_action_bound_loss(actions[minibatch_indices])
 
             self._policy_optimizer.zero_grad()
             loss.backward()
@@ -177,3 +179,8 @@ class PPO:
             "train/policy_loss": log_loss_sum / minibatch_count,
             "train/policy_clip_fraction": log_clip_fraction_sum / minibatch_count,
         }
+
+    def _compute_action_bound_loss(self, actions) -> torch.Tensor:
+        # TODO: implement action bound loss similar to mimickit.
+        first_action = next(iter(actions.values()))
+        return torch.zeros((), device=first_action.device, dtype=first_action.dtype)
