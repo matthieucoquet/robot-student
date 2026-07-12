@@ -1,52 +1,24 @@
 # Repository Guidelines
 
-## Project Goals
+## Purpose
 
-The goal of this library is to implement Proximal Policy Optimization (PPO)
-for efficient training with the Genesis physics platform, with potential
-support for Newton later. The implementation roadmap is:
+This Python library implements high-throughput PPO training with Genesis, with DeepMimic, BeyondMimic, and potential Newton support planned later. Prioritize training throughput: avoid unnecessary synchronization, device transfers, allocations, and Python overhead in performance-critical paths.
 
-1. Implement PPO.
-2. Build DeepMimic and BeyondMimic capabilities on top of the PPO
-   implementation.
+## Layout
 
-Implementation choices must prioritize training throughput. The PPO loop and
-its integration with Genesis should run as fast as possible, avoiding
-unnecessary synchronization, data transfers, allocations, and Python overhead
-in performance-critical paths.
+- `src/robot_student/` contains PPO, rollout storage, Genesis integration, environments, models, and utilities.
+- `experiment/` contains Python-configured training experiments; `experiment/ant/` is the current example.
+- `result/` contains generated training output and is ignored.
 
-## Project Structure & Module Organization
+## Development
 
-This is a small Python package managed with `uv`.
+The project uses `uv` and requires Python `>=3.13,<3.14`.
 
-- `src/robot_student/` contains the importable package code.
-- `pyproject.toml` defines package metadata, Python version requirements, build backend, and the `robot-student` script.
-- `README.md` is currently empty; update it when adding user-facing behavior.
+- `uv sync --locked` installs the locked environment.
+- `uv run python -m experiment.ant.train` launches the CUDA Ant experiment with its viewer.
+- `uv run ruff format` formats the code.
+- `uv run ruff format --check` and `uv run ruff check` run the CI checks.
 
-Library code is inside `src/robot_student/`. Configuration of training is also done in python in the `experiment` folder.
+## Conventions
 
-## Build, Test, and Development Commands
-
-- `uv sync` installs the project environment from `pyproject.toml` and `uv.lock`.
-- `uv run robot-student` runs the configured console script.
-- `uv run ruff format` formats Python code.
-- `uv run ruff check` lints Python code.
-
-The project requires Python `>=3.13`, as declared in `pyproject.toml`.
-
-## Coding Style & Naming Conventions
-
-- Use standard PEP8 Python conventions
-- Don't use abreviations in names.
-
-Ruff is configured in `pyproject.toml` for formatting and linting. Run `uv run ruff format` before committing, and use `uv run ruff check` to catch lint issues.
-
-## Agent-Specific Instructions
-
-Before editing, inspect existing files and preserve the minimal package structure. 
-
-Do not remove user changes or generated lock files unless explicitly asked. 
-
-Keep documentation synchronized with actual configured tools. 
-
-Do not overcomplicate code: keep it clean and minimal, and avoid handling every possible edge case unless needed.
+Follow PEP 8, use descriptive names without abbreviations, and follow Ruff's configuration in `pyproject.toml`. Keep changes clean and minimal, preserve user changes and `uv.lock`, and keep documentation aligned with actual behavior.
