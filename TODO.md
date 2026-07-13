@@ -1,3 +1,2 @@
-* Choose a license
 * Add docker image
-* Setup W&B
+* Reward, done in task
