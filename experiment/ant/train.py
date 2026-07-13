@@ -6,23 +6,26 @@ from robot_student.algorithm import PPO
 from robot_student.algorithm.rollout_buffer import RolloutBuffer
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.model import ActionBoundEnforcement
-from robot_student.util import Experiment
+from robot_student.util import Experiment, WeightsAndBiasesStorage
 
 from .environment import setup_environment
 from .model import Policy, ValueFunction
 
 
 class AntExperiment(Experiment):
-    def __init__(self):
+    def __init__(self) -> None:
+        weights_and_biases_storage = WeightsAndBiasesStorage()
         super().__init__(
             experiment_name="ant",
             run_name="ppo",
+            metric_storages=(weights_and_biases_storage,),
+            checkpoint_storages=(weights_and_biases_storage,),
             seed=0,
             debug_level=logging.DEBUG,
             device=torch.device("cuda"),
         )
 
-    def setup(self):
+    def setup(self) -> None:
         engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=True, seed=self.seed)
 
         environment_count = 10
@@ -45,7 +48,7 @@ class AntExperiment(Experiment):
             schema=environment.schema, rollout_length=32, environment_count=environment_count, device=self.device
         )
 
-        self.algo = PPO(
+        self.algorithm = PPO(
             environment=environment,
             policy=policy,
             value_function=value_function,
@@ -55,7 +58,7 @@ class AntExperiment(Experiment):
         )
 
     def launch(self):
-        self.algo.train(self, iteration_count=10, checkpoint_interval=5)
+        self.algorithm.train(self, iteration_count=10, checkpoint_interval=5)
 
 
 if __name__ == "__main__":

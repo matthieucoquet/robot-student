@@ -4,10 +4,16 @@ Really early PPO training experiments for robotic reinforcement learning in Gene
 
 ## Setup
 
-Install dependencies with uv:
+Install the dependencies with uv:
 
 ```sh
 uv sync
+```
+
+## Weights & Biases
+When using Weights & Biases for the metrics storage, first provide `WANDB_API_KEY` through the environment variables, then login to W&B:
+```sh
+uv run wandb login
 ```
 
 ## Train Ant
@@ -18,7 +24,6 @@ Launch the Ant PPO experiment with:
 uv run python -m experiment.ant.train
 ```
 
-The current Ant experiment uses Genesis with CUDA and opens the viewer.
 
 ## License
 

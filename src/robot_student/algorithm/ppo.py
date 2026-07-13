@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -7,6 +8,9 @@ from torch.optim import Optimizer
 from robot_student.algorithm.rollout_buffer import RolloutBuffer
 from robot_student.environment.environment import Environment
 from robot_student.model import ActionBoundEnforcement
+
+if TYPE_CHECKING:
+    from robot_student.util import Experiment
 
 
 class PPO:
@@ -47,7 +51,7 @@ class PPO:
 
         self._logger = logging.getLogger(__name__)
 
-    def train(self, experiment_storage, iteration_count: int, checkpoint_interval: int) -> None:
+    def train(self, experiment: "Experiment", iteration_count: int, checkpoint_interval: int) -> None:
         self._policy.train()
         self._value_function.train()
 
@@ -61,10 +65,10 @@ class PPO:
                 self._policy.update_normalizer(self._rollout_buffer.next_observations)
 
             if i % self._metric_log_interval == 0:
-                experiment_storage.metrics.log_scalars(metrics, i)
+                experiment.log_metrics(metrics, i)
 
             if i % checkpoint_interval == 0:
-                experiment_storage.checkpoint.save(
+                experiment.save_checkpoint(
                     {
                         "policy": self._policy.state_dict(),
                         "value_function": self._value_function.state_dict(),
