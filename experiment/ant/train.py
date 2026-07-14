@@ -22,11 +22,11 @@ class AntExperiment(Experiment):
             checkpoint_storages=(weights_and_biases_storage,),
             seed=0,
             debug_level=logging.DEBUG,
-            device=torch.device("cuda"),
+            device=torch.device("cpu"),
         )
 
     def setup(self) -> None:
-        engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=True, seed=self.seed)
+        engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=False, seed=self.seed)
 
         environment_count = 10
         environment = setup_environment(engine, environment_count=environment_count)
