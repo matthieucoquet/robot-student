@@ -161,16 +161,17 @@ class Experiment:
         self,
         experiment_name: str,
         run_name: str,
+        engine,
         metric_storages: Sequence[MetricStorage] = (),
         checkpoint_storages: Sequence[CheckpointStorage] = (),
         seed: int = 0,
         debug_level: int = logging.DEBUG,
-        device: torch.device | None = None,
     ) -> None:
         configure_logging(debug_level)
         set_seed(seed)
         self.seed = seed
-        self.device = device
+        self.engine = engine
+        self.device = engine.device
 
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         run_directory = Path.cwd() / "result" / experiment_name / f"{timestamp}_{run_name}"
@@ -180,7 +181,7 @@ class Experiment:
             experiment_name=experiment_name,
             run_directory=run_directory,
             seed=seed,
-            device=device,
+            device=self.device,
         )
 
         self._metric_storages = tuple(metric_storages)
@@ -189,10 +190,6 @@ class Experiment:
         self._storages = tuple({id(storage): storage for storage in storages}.values())
         for storage in self._storages:
             storage.initialize(context)
-
-    @property
-    def is_on_cuda(self) -> bool:
-        return self.device is not None and self.device.type == "cuda"
 
     def __enter__(self) -> Self:
         return self

@@ -4,13 +4,17 @@ from math import prod
 import torch
 from torch import nn
 
+from robot_student.model.weight_initializer import DefaultWeightInitializer
+
 
 class MLP(nn.Module):
     def __init__(
         self,
         input_shape: tuple[int, ...] | torch.Size,
         output_shape: tuple[int, ...] | torch.Size,
+        *,
         hidden_layers: list[int],
+        weight_initializer: DefaultWeightInitializer | None = None,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
     ) -> None:
@@ -21,11 +25,18 @@ class MLP(nn.Module):
         self._input_size = prod(self._input_shape)
         self._output_size = prod(self._output_shape)
 
+        if weight_initializer is None:
+            weight_initializer = DefaultWeightInitializer()
+
         layer_sizes = [self._input_size, *hidden_layers, self._output_size]
         layers: list[nn.Module] = []
         for layer_index, (input_size, output_size) in enumerate(pairwise(layer_sizes)):
-            layers.append(nn.Linear(input_size, output_size, device=device, dtype=dtype))
-            if layer_index < len(layer_sizes) - 2:
+            linear_layer = nn.Linear(input_size, output_size, device=device, dtype=dtype)
+            is_head = layer_index == len(layer_sizes) - 2
+            nonlinearity = "relu" if not is_head else None
+            weight_initializer(linear_layer, is_head=is_head, nonlinearity=nonlinearity)
+            layers.append(linear_layer)
+            if not is_head:
                 layers.append(nn.ReLU())
 
         self.network = nn.Sequential(*layers)

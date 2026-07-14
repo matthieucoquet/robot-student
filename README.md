@@ -24,6 +24,9 @@ Launch the Ant PPO experiment with:
 uv run python -m experiment.ant.train
 ```
 
+## Acknowledgements
+
+This project builds on ideas from two excellent projects: [MimicKit](https://github.com/xbpeng/MimicKit) and [RSL-RL](https://github.com/leggedrobotics/rsl_rl).
 
 ## License
 

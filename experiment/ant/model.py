@@ -3,8 +3,9 @@ from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model import MLP, ActionBoundEnforcement, create_distribution
+from robot_student.model import MLP, ActionBoundEnforcement, ActionDistribution
 from robot_student.model.normalizer import RunningNormalization
+from robot_student.model.weight_initializer import OrthogonalInitializer
 
 
 class Policy(nn.Module):
@@ -12,7 +13,7 @@ class Policy(nn.Module):
         self,
         schema: EnvironmentSchema,
         device: torch.device | str | None = None,
-        action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.ADDITIONAL_LOSS,
+        action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS,
     ) -> None:
         super().__init__()
 
@@ -32,7 +33,13 @@ class Policy(nn.Module):
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = MLP(input_shape=observation_schema.shape, output_shape=action_schema.shape, hidden_layers=[256], device=device)
+        self.body = MLP(
+            input_shape=observation_schema.shape,
+            output_shape=action_schema.shape,
+            hidden_layers=[256, 256],
+            weight_initializer=OrthogonalInitializer(head_gain=0.01),
+            device=device,
+        )
 
     @property
     def action_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -42,9 +49,8 @@ class Policy(nn.Module):
         normalized_observation = self.normalizer(observation[self.observation_key])
         return self.body(normalized_observation)
 
-    def create_distribution(self, mean: torch.Tensor) -> torch.distributions.Distribution:
-        # TODO take into account the action space bounds to compute the standard deviation, check mimickit
-        return create_distribution(
+    def create_distribution(self, mean: torch.Tensor) -> ActionDistribution:
+        return ActionDistribution(
             mean,
             standard_deviation=0.1,
             action_bound_enforcement=self.action_bound_enforcement,
@@ -67,7 +73,7 @@ class Policy(nn.Module):
     def log_prob(self, observation: TensorDictBase, action: TensorDictBase) -> tuple[torch.Tensor, torch.Tensor]:
         mean = self(observation)
         distribution = self.create_distribution(mean)
-        return distribution.log_prob(action[self.action_key]), mean
+        return distribution.log_prob(action[self.action_key]), distribution.action_mean
 
     def update_normalizer(self, observation: TensorDictBase) -> None:
         self.normalizer.update(observation[self.observation_key])
@@ -92,7 +98,13 @@ class ValueFunction(nn.Module):
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = MLP(input_shape=observation_schema.shape, output_shape=[1], hidden_layers=[256], device=device)
+        self.body = MLP(
+            input_shape=observation_schema.shape,
+            output_shape=(1,),
+            hidden_layers=[256, 256],
+            weight_initializer=OrthogonalInitializer(head_gain=1.0),
+            device=device,
+        )
 
     def forward(self, observation: TensorDictBase) -> torch.Tensor:
         normalized_observation = self.normalizer(observation[self.observation_key])

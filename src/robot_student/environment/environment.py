@@ -21,5 +21,5 @@ class Environment(ABC):
         """Reset completed environments and return the next observation."""
 
     @abstractmethod
-    def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Advance the environment by one simulation step and return the observation."""
+    def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
+        """Advance the environment by one control step and return the observation."""

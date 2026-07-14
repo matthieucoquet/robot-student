@@ -58,16 +58,19 @@ class PPO:
         self._observations = self._environment.reset()
 
         for i in range(iteration_count):
-            self._collect_rollouts()
-            metrics = self._update_value_function()
+            metrics = self._collect_rollouts()
+            metrics |= self._update_value_function()
             metrics |= self._update_policy()
             with torch.no_grad():
-                self._policy.update_normalizer(self._rollout_buffer.next_observations)
+                observations = self._rollout_buffer.observations
+                self._policy.update_normalizer(observations)
+                self._value_function.update_normalizer(observations)
 
             if i % self._metric_log_interval == 0:
                 experiment.log_metrics(metrics, i)
 
-            if i % checkpoint_interval == 0:
+            self._logger.debug(f"PPO iterations {i}")
+            if i % checkpoint_interval == 0 or i == iteration_count - 1:
                 experiment.save_checkpoint(
                     {
                         "policy": self._policy.state_dict(),
@@ -84,7 +87,7 @@ class PPO:
         for _ in range(self._rollout_buffer.rollout_length):
             action, log_probability = self._policy.sample_action_with_log_prob(self._observations)
 
-            next_observations, reward, terminal, truncated = self._environment.step(action)
+            next_observations, reward, terminal, truncated, transition_metrics = self._environment.step(action)
 
             self._rollout_buffer.add_transition(
                 observation=self._observations,
@@ -99,6 +102,7 @@ class PPO:
             self._observations = self._environment.reset_done(done)
 
         self._finalize_rollouts()
+        return transition_metrics | {"train/mean_reward": self._rollout_buffer.rewards.mean()}
 
     def _finalize_rollouts(self) -> None:
         observations = self._rollout_buffer.observations
@@ -128,8 +132,6 @@ class PPO:
         advantages.div_(advantage_std)
         advantages.clamp_(-self._advantage_clip, self._advantage_clip)
 
-        self._value_function.update_normalizer(observations)
-
     def _update_value_function(self) -> dict[str, torch.Tensor]:
         observations = self._rollout_buffer.flat_observations
         returns = self._rollout_buffer.flat_returns
@@ -158,7 +160,7 @@ class PPO:
 
         log_loss_sum = torch.zeros((), device=observations.device)
         log_clip_fraction_sum = torch.zeros((), device=observations.device)
-        action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.ADDITIONAL_LOSS
+        action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.BOUND_LOSS
         if action_bound_loss_enabled:
             log_action_bound_loss_sum = torch.zeros((), device=observations.device)
         minibatch_count = 0

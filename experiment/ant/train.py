@@ -15,23 +15,29 @@ from .model import Policy, ValueFunction
 class AntExperiment(Experiment):
     def __init__(self) -> None:
         weights_and_biases_storage = WeightsAndBiasesStorage()
+        seed = 0
+        engine = GenesisEngine(
+            cuda_backend=False,
+            show_viewer=False,
+            seed=seed,
+            control_frequency=30,
+            simulation_frequency=120,
+        )
         super().__init__(
             experiment_name="ant",
             run_name="ppo",
+            engine=engine,
             metric_storages=(weights_and_biases_storage,),
             checkpoint_storages=(weights_and_biases_storage,),
-            seed=0,
-            debug_level=logging.DEBUG,
-            device=torch.device("cuda"),
+            seed=seed,
+            debug_level=logging.INFO,
         )
 
     def setup(self) -> None:
-        engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=True, seed=self.seed)
+        environment_count = 256
+        environment = setup_environment(self.engine, device=self.device, environment_count=environment_count)
 
-        environment_count = 10
-        environment = setup_environment(engine, environment_count=environment_count)
-
-        action_bound_enforcement = ActionBoundEnforcement.ADDITIONAL_LOSS
+        action_bound_enforcement = ActionBoundEnforcement.BOUND_LOSS
 
         policy = Policy(
             environment.schema,
@@ -40,7 +46,7 @@ class AntExperiment(Experiment):
         )
         value_function = ValueFunction(environment.schema, device=self.device)
 
-        learning_rate = 3e-4
+        learning_rate = 1e-4
         policy_optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate)
         value_optimizer = torch.optim.Adam(value_function.parameters(), lr=learning_rate)
 
@@ -58,7 +64,7 @@ class AntExperiment(Experiment):
         )
 
     def launch(self):
-        self.algorithm.train(self, iteration_count=10, checkpoint_interval=5)
+        self.algorithm.train(self, iteration_count=10000, checkpoint_interval=100)
 
 
 if __name__ == "__main__":
