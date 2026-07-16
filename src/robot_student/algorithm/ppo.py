@@ -59,7 +59,8 @@ class PPO:
 
         for i in range(iteration_count):
             self._collect_rollouts()
-            metrics = self._update_value_function()
+            metrics = {"train/mean_reward": self._rollout_buffer.rewards.mean()}
+            metrics |= self._update_value_function()
             metrics |= self._update_policy()
             with torch.no_grad():
                 self._policy.update_normalizer(self._rollout_buffer.next_observations)

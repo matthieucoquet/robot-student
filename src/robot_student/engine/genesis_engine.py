@@ -92,11 +92,11 @@ class GenesisCharacter:
             bounds=(lower_bounds, upper_bounds),
         )
 
-    def get_root_position(self, environment_indices: torch.Tensor | None = None):
+    def get_generalized_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_qpos(envs_idx=environment_indices)
 
-    def get_joint_positions(self, environment_indices: torch.Tensor | None = None):
-        return self._character.get_dofs_position(envs_idx=environment_indices)
+    def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        return self._character.get_dofs_velocity(envs_idx=environment_indices)
 
     def control_pd(self, action: TensorDictBase) -> None:
         self._character.control_dofs_position(action["control"], self._controlled_dof_indices)

@@ -29,7 +29,7 @@ class AntExperiment(Experiment):
         engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=False, seed=self.seed)
 
         environment_count = 10
-        environment = setup_environment(engine, environment_count=environment_count)
+        environment = setup_environment(engine, device=self.device, environment_count=environment_count)
 
         action_bound_enforcement = ActionBoundEnforcement.ADDITIONAL_LOSS
 
