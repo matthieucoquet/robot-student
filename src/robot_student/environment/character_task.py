@@ -1,7 +1,15 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from typing import NamedTuple
 
 import torch
 from tensordict import TensorDictBase
+
+
+class CharacterTaskStep(NamedTuple):
+    reward: torch.Tensor
+    terminal: torch.Tensor
+    transition_metrics: Mapping[str, torch.Tensor]
 
 
 class CharacterTask(ABC):
@@ -11,5 +19,5 @@ class CharacterTask(ABC):
         generalized_positions: torch.Tensor,
         generalized_velocities: torch.Tensor,
         action: TensorDictBase,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Compute reward, terminal, and truncation tensors for one simulation step."""
+    ) -> CharacterTaskStep:
+        """Compute reward, termination, and diagnostic metrics for one simulation step."""

@@ -58,8 +58,7 @@ class PPO:
         self._observations = self._environment.reset()
 
         for i in range(iteration_count):
-            self._collect_rollouts()
-            metrics = {"train/mean_reward": self._rollout_buffer.rewards.mean()}
+            metrics = self._collect_rollouts()
             metrics |= self._update_value_function()
             metrics |= self._update_policy()
             with torch.no_grad():
@@ -86,7 +85,7 @@ class PPO:
         for _ in range(self._rollout_buffer.rollout_length):
             action, log_probability = self._policy.sample_action_with_log_prob(self._observations)
 
-            next_observations, reward, terminal, truncated = self._environment.step(action)
+            next_observations, reward, terminal, truncated, transition_metrics = self._environment.step(action)
 
             self._rollout_buffer.add_transition(
                 observation=self._observations,
@@ -101,6 +100,7 @@ class PPO:
             self._observations = self._environment.reset_done(done)
 
         self._finalize_rollouts()
+        return transition_metrics | {"train/mean_reward": self._rollout_buffer.rewards.mean()}
 
     def _finalize_rollouts(self) -> None:
         observations = self._rollout_buffer.observations

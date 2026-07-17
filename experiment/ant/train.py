@@ -40,7 +40,7 @@ class AntExperiment(Experiment):
         )
         value_function = ValueFunction(environment.schema, device=self.device)
 
-        learning_rate = 3e-4
+        learning_rate = 1e-4
         policy_optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate)
         value_optimizer = torch.optim.Adam(value_function.parameters(), lr=learning_rate)
 

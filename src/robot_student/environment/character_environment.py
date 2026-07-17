@@ -56,17 +56,17 @@ class CharacterEnvironment(Environment):
         generalized_positions, generalized_velocities = self._get_character_state()
         return self._get_observation(generalized_positions, generalized_velocities)
 
-    def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         self._engine.step(action)
 
         generalized_positions, generalized_velocities = self._get_character_state()
         observation = self._get_observation(generalized_positions, generalized_velocities)
-        reward, terminal = self._task.step(generalized_positions, generalized_velocities, action)
+        task_step = self._task.step(generalized_positions, generalized_velocities, action)
 
         self._episode_step_count.add_(1)
         truncated = self._episode_step_count >= self._maximum_episode_steps
 
-        return observation, reward, terminal, truncated
+        return observation, task_step.reward, task_step.terminal, truncated, task_step.transition_metrics
 
     def _compute_schema(self) -> EnvironmentSchema:
         observation_type = torch.float32
