@@ -5,6 +5,7 @@ from torch import nn
 from robot_student.environment.schema import EnvironmentSchema
 from robot_student.model import MLP, ActionBoundEnforcement, create_distribution
 from robot_student.model.normalizer import RunningNormalization
+from robot_student.model.weight_initializer import OrthogonalInitializer
 
 
 class Policy(nn.Module):
@@ -32,7 +33,13 @@ class Policy(nn.Module):
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = MLP(input_shape=observation_schema.shape, output_shape=action_schema.shape, hidden_layers=[256], device=device)
+        self.body = MLP(
+            input_shape=observation_schema.shape,
+            output_shape=action_schema.shape,
+            hidden_layers=[256, 256],
+            weight_initializer=OrthogonalInitializer(head_gain=0.01),
+            device=device,
+        )
 
     @property
     def action_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -92,7 +99,13 @@ class ValueFunction(nn.Module):
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = MLP(input_shape=observation_schema.shape, output_shape=[1], hidden_layers=[256], device=device)
+        self.body = MLP(
+            input_shape=observation_schema.shape,
+            output_shape=(1,),
+            hidden_layers=[256, 256],
+            weight_initializer=OrthogonalInitializer(head_gain=1.0),
+            device=device,
+        )
 
     def forward(self, observation: TensorDictBase) -> torch.Tensor:
         normalized_observation = self.normalizer(observation[self.observation_key])

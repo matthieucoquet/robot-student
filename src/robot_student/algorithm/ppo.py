@@ -68,7 +68,8 @@ class PPO:
             if i % self._metric_log_interval == 0:
                 experiment.log_metrics(metrics, i)
 
-            if i % checkpoint_interval == 0:
+            self._logger.debug(f"PPO iterations {i}")
+            if i % checkpoint_interval == 0 or i == iteration_count - 1:
                 experiment.save_checkpoint(
                     {
                         "policy": self._policy.state_dict(),

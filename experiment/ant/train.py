@@ -21,14 +21,14 @@ class AntExperiment(Experiment):
             metric_storages=(weights_and_biases_storage,),
             checkpoint_storages=(weights_and_biases_storage,),
             seed=0,
-            debug_level=logging.DEBUG,
+            debug_level=logging.INFO,
             device=torch.device("cpu"),
         )
 
     def setup(self) -> None:
         engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=False, seed=self.seed)
 
-        environment_count = 10
+        environment_count = 256
         environment = setup_environment(engine, device=self.device, environment_count=environment_count)
 
         action_bound_enforcement = ActionBoundEnforcement.ADDITIONAL_LOSS
@@ -58,7 +58,7 @@ class AntExperiment(Experiment):
         )
 
     def launch(self):
-        self.algorithm.train(self, iteration_count=10, checkpoint_interval=5)
+        self.algorithm.train(self, iteration_count=2000, checkpoint_interval=100)
 
 
 if __name__ == "__main__":

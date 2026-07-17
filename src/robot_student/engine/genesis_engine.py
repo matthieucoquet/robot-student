@@ -14,7 +14,10 @@ class GenesisEngine:
         super().__init__()
         gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
 
-        self._scene = gs.Scene(show_viewer=show_viewer)
+        self._scene = gs.Scene(
+            show_viewer=show_viewer,
+            profiling_options=gs.options.ProfilingOptions(show_FPS=False),
+        )
         self.characters = []
 
     def add_character(self, xml_path: Path, control_mode: ControlMode) -> "GenesisCharacter":
