@@ -33,7 +33,7 @@ class RunInDirectionTask(CharacterTask):
         root_height = generalized_positions[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
         root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
-        terminal = root_height_is_healthy.logical_not_()
+        terminal = ~root_height_is_healthy
 
         forward_velocity = torch.sum(generalized_velocities[..., :2] * self._direction, dim=-1)
 
