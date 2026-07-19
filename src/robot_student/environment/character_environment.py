@@ -61,7 +61,8 @@ class CharacterEnvironment(Environment):
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
         control_forces = self._character.get_control_forces()
-        self._engine.step()
+        for _ in range(self._engine.simulation_steps_per_control_step):
+            self._engine.step()
 
         generalized_positions, generalized_velocities = self._get_character_state()
         observation = self._get_observation(generalized_positions, generalized_velocities)

@@ -10,11 +10,25 @@ from robot_student.environment.schema import TensorSchema
 
 
 class GenesisEngine:
-    def __init__(self, cuda_backend: bool = False, show_viewer: bool = True, seed: int | None = None) -> None:
+    def __init__(
+        self,
+        cuda_backend: bool = False,
+        show_viewer: bool = True,
+        seed: int | None = None,
+        control_frequency: int = 100,
+        simulation_frequency: int = 100,
+    ) -> None:
         super().__init__()
+        if simulation_frequency % control_frequency != 0:
+            raise ValueError("simulation_frequency must be an integer multiple of control_frequency")
+
         gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
 
+        self.control_frequency = control_frequency
+        self.simulation_frequency = simulation_frequency
+        self.simulation_steps_per_control_step = simulation_frequency // control_frequency
         self._scene = gs.Scene(
+            sim_options=gs.options.SimOptions(dt=1.0 / simulation_frequency),
             show_viewer=show_viewer,
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
         )
