@@ -34,9 +34,7 @@ class GenesisEngine:
         for character in self.characters:
             character.configure_control_mode()
 
-    def step(self, action: TensorDictBase) -> None:
-        for character in self.characters:
-            character.control_pd(action)
+    def step(self) -> None:
         self._scene.step()
 
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
@@ -101,7 +99,13 @@ class GenesisCharacter:
     def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_dofs_velocity(envs_idx=environment_indices)
 
-    def control_pd(self, action: TensorDictBase) -> None:
+    def get_control_forces(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        return self._character.get_dofs_control_force(
+            self._controlled_dof_indices,
+            envs_idx=environment_indices,
+        )
+
+    def apply_action(self, action: TensorDictBase) -> None:
         self._character.control_dofs_position(action["control"], self._controlled_dof_indices)
 
 

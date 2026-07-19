@@ -18,6 +18,7 @@ class CharacterTask(ABC):
         self,
         generalized_positions: torch.Tensor,
         generalized_velocities: torch.Tensor,
+        control_forces: torch.Tensor,
         action: TensorDictBase,
     ) -> CharacterTaskStep:
         """Compute reward, termination, and diagnostic metrics for one simulation step."""

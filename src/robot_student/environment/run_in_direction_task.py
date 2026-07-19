@@ -28,6 +28,7 @@ class RunInDirectionTask(CharacterTask):
         self,
         generalized_positions: torch.Tensor,
         generalized_velocities: torch.Tensor,
+        control_forces: torch.Tensor,
         action: TensorDictBase,
     ) -> CharacterTaskStep:
         root_height = generalized_positions[..., 2]
@@ -37,8 +38,7 @@ class RunInDirectionTask(CharacterTask):
 
         forward_velocity = torch.sum(generalized_velocities[..., :2] * self._direction, dim=-1)
 
-        control = action["control"]
-        control_cost = torch.sum(control.square(), dim=-1)
+        control_cost = torch.sum(control_forces.square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.5
         reward = stay_alive_reward + self._forward_velocity_weight * forward_velocity - self._control_cost_weight * control_cost
 
