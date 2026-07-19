@@ -26,7 +26,13 @@ class AntExperiment(Experiment):
         )
 
     def setup(self) -> None:
-        engine = GenesisEngine(cuda_backend=self.is_on_cuda, show_viewer=False, seed=self.seed)
+        engine = GenesisEngine(
+            cuda_backend=self.is_on_cuda,
+            show_viewer=False,
+            seed=self.seed,
+            control_frequency=30,
+            simulation_frequency=120,
+        )
 
         environment_count = 256
         environment = setup_environment(engine, device=self.device, environment_count=environment_count)
