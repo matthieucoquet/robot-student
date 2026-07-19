@@ -160,7 +160,7 @@ class PPO:
 
         log_loss_sum = torch.zeros((), device=observations.device)
         log_clip_fraction_sum = torch.zeros((), device=observations.device)
-        action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.ADDITIONAL_LOSS
+        action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.BOUND_LOSS
         if action_bound_loss_enabled:
             log_action_bound_loss_sum = torch.zeros((), device=observations.device)
         minibatch_count = 0

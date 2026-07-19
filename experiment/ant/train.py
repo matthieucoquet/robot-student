@@ -31,7 +31,7 @@ class AntExperiment(Experiment):
         environment_count = 256
         environment = setup_environment(engine, device=self.device, environment_count=environment_count)
 
-        action_bound_enforcement = ActionBoundEnforcement.ADDITIONAL_LOSS
+        action_bound_enforcement = ActionBoundEnforcement.BOUND_LOSS
 
         policy = Policy(
             environment.schema,
