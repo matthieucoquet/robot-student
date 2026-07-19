@@ -24,6 +24,23 @@ def setup_environment(engine, device: torch.device, environment_count: int = 10)
         joints_settings[joint] = PositionControlSettings(kp=1.0, kd=0.1, force_range=(-5.0, 5.0))
     control_mode = PositionControlMode(joints=joints_settings)
     task = RunInDirectionTask(device=device)
+    initial_pose = (
+        0.0,
+        0.0,
+        0.55,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        -1.0,
+        0.0,
+        -1.0,
+        0.0,
+        1.0,
+    )
 
     return CharacterEnvironment(
         engine,
@@ -32,4 +49,5 @@ def setup_environment(engine, device: torch.device, environment_count: int = 10)
         control_mode=control_mode,
         task=task,
         device=device,
+        initial_pose=initial_pose,
     )

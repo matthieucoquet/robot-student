@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,13 +23,27 @@ class CharacterEnvironment(Environment):
         control_mode: ControlMode,
         task: CharacterTask,
         device: torch.device,
+        initial_pose: Sequence[float],
         maximum_episode_steps: int = 1_000,
     ) -> None:
         self._engine = engine
         self._task = task
         self._engine.add_ground_plane()
         self._character = engine.add_character(xml_path, control_mode=control_mode)
+
+        initial_pose_tensor = torch.tensor(
+            initial_pose,
+            dtype=torch.float32,
+            device=device,
+        )
+        expected_shape = (self._character.n_qs,)
+        if initial_pose_tensor.shape != expected_shape:
+            raise ValueError(f"initial_pose must have shape {expected_shape}, got {tuple(initial_pose_tensor.shape)}")
+
         self._engine.build_scene(environment_count=environment_count, env_spacing=(1.0, 1.0))
+        batched_initial_pose = initial_pose_tensor.expand(environment_count, -1).contiguous()
+        self._character.set_generalized_positions(batched_initial_pose, zero_velocity=True)
+        self._engine.register_initial_pose()
 
         self._schema = self._compute_schema()
         self._maximum_episode_steps = maximum_episode_steps

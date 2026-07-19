@@ -54,6 +54,9 @@ class GenesisEngine:
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
         self._scene.reset(envs_idx=environment_indices)
 
+    def register_initial_pose(self) -> None:
+        self._scene.reset(state=self._scene.get_state())
+
 
 class GenesisCharacter:
     def __init__(self, character: RigidEntity, control_mode: ControlMode) -> None:
@@ -112,6 +115,9 @@ class GenesisCharacter:
 
     def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_dofs_velocity(envs_idx=environment_indices)
+
+    def set_generalized_positions(self, generalized_positions: torch.Tensor, zero_velocity: bool = False) -> None:
+        self._character.set_qpos(generalized_positions, zero_velocity=zero_velocity)
 
     def get_control_forces(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_dofs_control_force(
