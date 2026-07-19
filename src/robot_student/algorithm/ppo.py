@@ -62,7 +62,9 @@ class PPO:
             metrics |= self._update_value_function()
             metrics |= self._update_policy()
             with torch.no_grad():
-                self._policy.update_normalizer(self._rollout_buffer.next_observations)
+                observations = self._rollout_buffer.observations
+                self._policy.update_normalizer(observations)
+                self._value_function.update_normalizer(observations)
 
             if i % self._metric_log_interval == 0:
                 experiment.log_metrics(metrics, i)
@@ -129,8 +131,6 @@ class PPO:
         advantages.sub_(advantage_mean)
         advantages.div_(advantage_std)
         advantages.clamp_(-self._advantage_clip, self._advantage_clip)
-
-        self._value_function.update_normalizer(observations)
 
     def _update_value_function(self) -> dict[str, torch.Tensor]:
         observations = self._rollout_buffer.flat_observations
