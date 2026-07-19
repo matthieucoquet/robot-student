@@ -57,11 +57,15 @@ class CharacterEnvironment(Environment):
         return self._get_observation(generalized_positions, generalized_velocities)
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        self._engine.step(action)
+        self._character.apply_action(action)
+        # This accessor evaluates the controller against the current state, so
+        # sample it before advancing the state that the action applies to.
+        control_forces = self._character.get_control_forces()
+        self._engine.step()
 
         generalized_positions, generalized_velocities = self._get_character_state()
         observation = self._get_observation(generalized_positions, generalized_velocities)
-        task_step = self._task.step(generalized_positions, generalized_velocities, action)
+        task_step = self._task.step(generalized_positions, generalized_velocities, control_forces, action)
 
         self._episode_step_count.add_(1)
         truncated = self._episode_step_count >= self._maximum_episode_steps
