@@ -3,12 +3,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
+from genesis.utils.geom import transform_by_quat, transform_quat_by_quat
 from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.environment.character_task import CharacterTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
+from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d
 
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
@@ -58,8 +60,8 @@ class CharacterEnvironment(Environment):
 
         self._episode_step_count.zero_()
 
-        generalized_positions, generalized_velocities = self._get_character_state()
-        return self._get_observation(generalized_positions, generalized_velocities)
+        generalized_velocities = self._character.get_generalized_velocities()
+        return self._get_character_observation(generalized_velocities)
 
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
         # TODO need to profile to see if this is a bottleneck
@@ -68,8 +70,8 @@ class CharacterEnvironment(Environment):
         self._engine.reset(environment_indices=environment_indices)
         self._episode_step_count.masked_fill_(done, 0)
 
-        generalized_positions, generalized_velocities = self._get_character_state()
-        return self._get_observation(generalized_positions, generalized_velocities)
+        generalized_velocities = self._character.get_generalized_velocities()
+        return self._get_character_observation(generalized_velocities)
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         self._character.apply_action(action)
@@ -79,8 +81,9 @@ class CharacterEnvironment(Environment):
         for _ in range(self._engine.simulation_steps_per_control_step):
             self._engine.step()
 
-        generalized_positions, generalized_velocities = self._get_character_state()
-        observation = self._get_observation(generalized_positions, generalized_velocities)
+        generalized_positions = self._character.get_generalized_positions()
+        generalized_velocities = self._character.get_generalized_velocities()
+        observation = self._get_character_observation(generalized_velocities)
         task_step = self._task.step(generalized_positions, generalized_velocities, control_forces, action)
 
         self._episode_step_count.add_(1)
@@ -90,25 +93,42 @@ class CharacterEnvironment(Environment):
 
     def _compute_schema(self) -> EnvironmentSchema:
         observation_type = torch.float32
+        root_observation_size = 1 + 6 + 3 + 3
+        proprioception_size = root_observation_size + 2 * self._character.n_joint_dofs
 
         return EnvironmentSchema(
             observations={
                 "proprioception": TensorSchema(
-                    shape=(self._character.n_qs + self._character.n_dofs,),
+                    shape=(proprioception_size,),
                     data_type=observation_type,
                 )
             },
             actions={"control": self._character.get_action_schema()},
         )
 
-    def _get_character_state(self) -> tuple[torch.Tensor, torch.Tensor]:
-        return self._character.get_generalized_positions(), self._character.get_generalized_velocities()
+    def _get_character_observation(self, generalized_velocities: torch.Tensor) -> TensorDictBase:
+        global_observation = True
+        root_position, root_rotation, root_velocity, root_angular_velocity = self._character.get_root_state()
+        joint_positions = self._character.get_joint_dof_positions()
+        joint_velocities = generalized_velocities[..., self._character.n_root_dofs :]
 
-    def _get_observation(
-        self,
-        generalized_positions: torch.Tensor,
-        generalized_velocities: torch.Tensor,
-    ) -> TensorDictBase:
-        proprioception = torch.cat((generalized_positions, generalized_velocities), dim=-1)
+        root_height = root_position[..., 2:3]
+        if global_observation:
+            root_rotation = quat_to_rot6d(root_rotation)
+        else:
+            inverse_heading = inverse_heading_rotation(root_rotation)
+            local_root_rotation = transform_quat_by_quat(root_rotation, inverse_heading)
+            root_rotation = quat_to_rot6d(local_root_rotation)
+            root_velocity = transform_by_quat(root_velocity, inverse_heading)
+            root_angular_velocity = transform_by_quat(root_angular_velocity, inverse_heading)
 
+        proprioception_components = [
+            root_height,
+            root_rotation,
+            root_velocity,
+            root_angular_velocity,
+            joint_positions,  # TODO: mimickit use 6D for each joint, relative to the rest/initial pose
+            joint_velocities,
+        ]
+        proprioception = torch.cat(proprioception_components, dim=-1)
         return TensorDict({"proprioception": proprioception}, batch_size=proprioception.shape[:-1], device=proprioception.device)

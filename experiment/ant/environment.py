@@ -21,8 +21,8 @@ def setup_environment(engine, device: torch.device, environment_count: int = 10)
     ]
     joints_settings = {}
     for joint in joints_name:
-        joints_settings[joint] = PositionControlSettings(kp=1.0, kd=0.1, force_range=(-5.0, 5.0))
-    control_mode = PositionControlMode(joints=joints_settings)
+        joints_settings[joint] = PositionControlSettings(kp=1500.0, kd=50.0, force_range=(-2000.0, 2000.0))
+    control_mode = PositionControlMode(joints=joints_settings, action_limit_scale=1.1)
     task = RunInDirectionTask(device=device)
     initial_pose = (
         0.0,

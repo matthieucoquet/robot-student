@@ -65,6 +65,8 @@ class GenesisCharacter:
         self._setup_controlled_joints()
         self.n_qs = self._character.n_qs
         self.n_dofs = self._character.n_dofs
+        self.n_root_dofs = self._character.links[0].n_dofs
+        self.n_joint_dofs = self.n_dofs - self.n_root_dofs
         self.n_controlled_dofs = len(self._controlled_dof_indices)
 
     def _setup_controlled_joints(self) -> None:
@@ -116,6 +118,10 @@ class GenesisCharacter:
     def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_dofs_velocity(envs_idx=environment_indices)
 
+    def get_joint_dof_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        positions = self._character.get_dofs_position(envs_idx=environment_indices)
+        return positions[..., self.n_root_dofs :]
+
     def set_generalized_positions(self, generalized_positions: torch.Tensor, zero_velocity: bool = False) -> None:
         self._character.set_qpos(generalized_positions, zero_velocity=zero_velocity)
 
@@ -124,6 +130,13 @@ class GenesisCharacter:
             self._controlled_dof_indices,
             envs_idx=environment_indices,
         )
+
+    def get_root_state(self, environment_indices: torch.Tensor | None = None, relative: bool = False):
+        position = self._character.get_pos(envs_idx=environment_indices, relative=relative)
+        rotation = self._character.get_quat(envs_idx=environment_indices, relative=relative)
+        velocity = self._character.get_vel(envs_idx=environment_indices)
+        angular_velocity = self._character.get_ang(envs_idx=environment_indices)
+        return position, rotation, velocity, angular_velocity
 
     def apply_action(self, action: TensorDictBase) -> None:
         self._character.control_dofs_position(action["control"], self._controlled_dof_indices)
