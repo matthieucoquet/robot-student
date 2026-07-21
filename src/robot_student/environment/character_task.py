@@ -3,7 +3,6 @@ from collections.abc import Mapping
 from typing import NamedTuple
 
 import torch
-from tensordict import TensorDictBase
 
 
 class CharacterTaskStep(NamedTuple):
@@ -16,9 +15,8 @@ class CharacterTask(ABC):
     @abstractmethod
     def step(
         self,
-        generalized_positions: torch.Tensor,
-        generalized_velocities: torch.Tensor,
+        root_position: torch.Tensor,
+        root_velocity: torch.Tensor,
         control_forces: torch.Tensor,
-        action: TensorDictBase,
     ) -> CharacterTaskStep:
         """Compute reward, termination, and diagnostic metrics for one simulation step."""

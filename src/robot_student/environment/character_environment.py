@@ -15,6 +15,8 @@ from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
 
+type RootState = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+
 
 class CharacterEnvironment(Environment):
     def __init__(
@@ -60,8 +62,8 @@ class CharacterEnvironment(Environment):
 
         self._episode_step_count.zero_()
 
-        generalized_velocities = self._character.get_generalized_velocities()
-        return self._get_character_observation(generalized_velocities)
+        root_state = self._character.get_root_state()
+        return self._get_character_observation(root_state)
 
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
         # TODO need to profile to see if this is a bottleneck
@@ -70,8 +72,8 @@ class CharacterEnvironment(Environment):
         self._engine.reset(environment_indices=environment_indices)
         self._episode_step_count.masked_fill_(done, 0)
 
-        generalized_velocities = self._character.get_generalized_velocities()
-        return self._get_character_observation(generalized_velocities)
+        root_state = self._character.get_root_state()
+        return self._get_character_observation(root_state)
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         self._character.apply_action(action)
@@ -81,10 +83,10 @@ class CharacterEnvironment(Environment):
         for _ in range(self._engine.simulation_steps_per_control_step):
             self._engine.step()
 
-        generalized_positions = self._character.get_generalized_positions()
-        generalized_velocities = self._character.get_generalized_velocities()
-        observation = self._get_character_observation(generalized_velocities)
-        task_step = self._task.step(generalized_positions, generalized_velocities, control_forces, action)
+        root_state = self._character.get_root_state()
+        root_position, _, root_velocity, _ = root_state
+        observation = self._get_character_observation(root_state)
+        task_step = self._task.step(root_position, root_velocity, control_forces)
 
         self._episode_step_count.add_(1)
         truncated = self._episode_step_count >= self._maximum_episode_steps
@@ -106,10 +108,11 @@ class CharacterEnvironment(Environment):
             actions={"control": self._character.get_action_schema()},
         )
 
-    def _get_character_observation(self, generalized_velocities: torch.Tensor) -> TensorDictBase:
+    def _get_character_observation(self, root_state: RootState) -> TensorDictBase:
         global_observation = True
-        root_position, root_rotation, root_velocity, root_angular_velocity = self._character.get_root_state()
+        root_position, root_rotation, root_velocity, root_angular_velocity = root_state
         joint_positions = self._character.get_joint_dof_positions()
+        generalized_velocities = self._character.get_generalized_velocities()
         joint_velocities = generalized_velocities[..., self._character.n_root_dofs :]
 
         root_height = root_position[..., 2:3]

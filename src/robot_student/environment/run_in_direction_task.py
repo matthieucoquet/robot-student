@@ -1,7 +1,6 @@
 import math
 
 import torch
-from tensordict import TensorDictBase
 
 from robot_student.environment.character_task import CharacterTask, CharacterTaskStep
 
@@ -26,17 +25,16 @@ class RunInDirectionTask(CharacterTask):
 
     def step(
         self,
-        generalized_positions: torch.Tensor,
-        generalized_velocities: torch.Tensor,
+        root_position: torch.Tensor,
+        root_velocity: torch.Tensor,
         control_forces: torch.Tensor,
-        action: TensorDictBase,
     ) -> CharacterTaskStep:
-        root_height = generalized_positions[..., 2]
+        root_height = root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
         root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
         terminal = ~root_height_is_healthy
 
-        forward_velocity = torch.sum(generalized_velocities[..., :2] * self._direction, dim=-1)
+        forward_velocity = torch.sum(root_velocity[..., :2] * self._direction, dim=-1)
 
         control_cost = torch.sum(control_forces.square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.5
