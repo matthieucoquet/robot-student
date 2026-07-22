@@ -11,7 +11,9 @@ uv sync
 ```
 
 ## Weights & Biases
+
 When using Weights & Biases for the metrics storage, first provide `WANDB_API_KEY` through the environment variables, then login to W&B:
+
 ```sh
 uv run wandb login
 ```
@@ -22,6 +24,16 @@ Launch the Ant PPO experiment with:
 
 ```sh
 uv run python -m experiment.ant.train
+```
+
+## Evaluate Ant
+
+Set `WEIGHTS_AND_BIASES_RUN_ID` near the top of `experiment/ant/evaluate.py` to the W&B run to evaluate.
+
+Launch the visual evaluation with:
+
+```sh
+uv run python -m experiment.ant.evaluate
 ```
 
 ## Acknowledgements

@@ -44,7 +44,7 @@ class CharacterEnvironment(Environment):
         if initial_pose_tensor.shape != expected_shape:
             raise ValueError(f"initial_pose must have shape {expected_shape}, got {tuple(initial_pose_tensor.shape)}")
 
-        self._engine.build_scene(environment_count=environment_count, env_spacing=(1.0, 1.0))
+        self._engine.build_scene(environment_count=environment_count, env_spacing=(2.0, 2.0))
         batched_initial_pose = initial_pose_tensor.expand(environment_count, -1).contiguous()
         self._character.set_generalized_positions(batched_initial_pose, zero_velocity=True)
         self._engine.register_initial_pose()
