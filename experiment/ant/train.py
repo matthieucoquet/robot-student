@@ -15,27 +15,27 @@ from .model import Policy, ValueFunction
 class AntExperiment(Experiment):
     def __init__(self) -> None:
         weights_and_biases_storage = WeightsAndBiasesStorage()
-        super().__init__(
-            experiment_name="ant",
-            run_name="ppo",
-            metric_storages=(weights_and_biases_storage,),
-            checkpoint_storages=(weights_and_biases_storage,),
-            seed=0,
-            debug_level=logging.INFO,
-            device=torch.device("cpu"),
-        )
-
-    def setup(self) -> None:
+        seed = 0
         engine = GenesisEngine(
-            cuda_backend=self.is_on_cuda,
+            cuda_backend=False,
             show_viewer=False,
-            seed=self.seed,
+            seed=seed,
             control_frequency=30,
             simulation_frequency=120,
         )
+        super().__init__(
+            experiment_name="ant",
+            run_name="ppo",
+            engine=engine,
+            metric_storages=(weights_and_biases_storage,),
+            checkpoint_storages=(weights_and_biases_storage,),
+            seed=seed,
+            debug_level=logging.INFO,
+        )
 
+    def setup(self) -> None:
         environment_count = 256
-        environment = setup_environment(engine, device=self.device, environment_count=environment_count)
+        environment = setup_environment(self.engine, device=self.device, environment_count=environment_count)
 
         action_bound_enforcement = ActionBoundEnforcement.BOUND_LOSS
 
@@ -64,7 +64,7 @@ class AntExperiment(Experiment):
         )
 
     def launch(self):
-        self.algorithm.train(self, iteration_count=2000, checkpoint_interval=100)
+        self.algorithm.train(self, iteration_count=10000, checkpoint_interval=100)
 
 
 if __name__ == "__main__":

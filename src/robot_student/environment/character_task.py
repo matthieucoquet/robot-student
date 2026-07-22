@@ -17,6 +17,6 @@ class CharacterTask(ABC):
         self,
         root_position: torch.Tensor,
         root_velocity: torch.Tensor,
-        control_forces: torch.Tensor,
+        normalized_control_forces: torch.Tensor,
     ) -> CharacterTaskStep:
         """Compute reward, termination, and diagnostic metrics for one simulation step."""

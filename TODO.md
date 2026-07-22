@@ -1,2 +1,3 @@
 * PPO tricks https://arxiv.org/pdf/2005.12729
-* Evaluation with video or image render
+* Evaluation with video or image render: for now after the task
+* Add one humanoid robot

@@ -11,7 +11,7 @@ class RunInDirectionTask(CharacterTask):
         device: torch.device,
         direction: tuple[float, float] = (1.0, 0.0),
         forward_velocity_weight: float = 1.0,
-        control_cost_weight: float = 0.01,
+        control_cost_weight: float = 0.5,
         height_range: tuple[float, float] = (0.2, 1.0),
     ) -> None:
         direction_norm = math.hypot(*direction)
@@ -27,7 +27,7 @@ class RunInDirectionTask(CharacterTask):
         self,
         root_position: torch.Tensor,
         root_velocity: torch.Tensor,
-        control_forces: torch.Tensor,
+        normalized_control_forces: torch.Tensor,
     ) -> CharacterTaskStep:
         root_height = root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
@@ -36,7 +36,7 @@ class RunInDirectionTask(CharacterTask):
 
         forward_velocity = torch.sum(root_velocity[..., :2] * self._direction, dim=-1)
 
-        control_cost = torch.sum(control_forces.square(), dim=-1)
+        control_cost = torch.mean(normalized_control_forces.square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.5
         reward = stay_alive_reward + self._forward_velocity_weight * forward_velocity - self._control_cost_weight * control_cost
 

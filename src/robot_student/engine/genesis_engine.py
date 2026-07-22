@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import genesis as gs
@@ -33,6 +34,10 @@ class GenesisEngine:
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
         )
         self.characters = []
+
+    @property
+    def device(self) -> torch.device:
+        return gs.device
 
     def add_character(self, xml_path: Path, control_mode: ControlMode) -> "GenesisCharacter":
         character = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
@@ -82,19 +87,28 @@ class GenesisCharacter:
                 velocity_gain_values = []
                 force_lower_bounds = []
                 force_upper_bounds = []
+                maximum_control_forces = []
 
                 for joint in self._controlled_joints:
                     settings = joint_settings[joint.name]
+                    force_lower_bound, force_upper_bound = settings.force_range
+                    maximum_control_force = max(abs(force_lower_bound), abs(force_upper_bound))
+
                     for _ in joint.dofs_idx_local:
                         position_gain_values.append(settings.kp)
                         velocity_gain_values.append(settings.kd)
-                        force_lower_bound, force_upper_bound = settings.force_range
                         force_lower_bounds.append(force_lower_bound)
                         force_upper_bounds.append(force_upper_bound)
+                        maximum_control_forces.append(maximum_control_force)
 
                 self._character.set_dofs_kp(position_gain_values, self._controlled_dof_indices)
                 self._character.set_dofs_kv(velocity_gain_values, self._controlled_dof_indices)
                 self._character.set_dofs_force_range(force_lower_bounds, force_upper_bounds, self._controlled_dof_indices)
+                self._inverse_maximum_control_forces = torch.tensor(
+                    maximum_control_forces,
+                    device=gs.device,
+                    dtype=torch.float32,
+                ).reciprocal_()
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
@@ -130,6 +144,10 @@ class GenesisCharacter:
             self._controlled_dof_indices,
             envs_idx=environment_indices,
         )
+
+    def get_normalized_control_forces(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        control_forces = self.get_control_forces(environment_indices)
+        return control_forces.mul_(self._inverse_maximum_control_forces)
 
     def get_root_state(self, environment_indices: torch.Tensor | None = None, relative: bool = False):
         position = self._character.get_pos(envs_idx=environment_indices, relative=relative)

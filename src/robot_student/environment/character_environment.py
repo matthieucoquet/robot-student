@@ -79,14 +79,14 @@ class CharacterEnvironment(Environment):
         self._character.apply_action(action)
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
-        control_forces = self._character.get_control_forces()
+        normalized_control_forces = self._character.get_normalized_control_forces()
         for _ in range(self._engine.simulation_steps_per_control_step):
             self._engine.step()
 
         root_state = self._character.get_root_state()
         root_position, _, root_velocity, _ = root_state
         observation = self._get_character_observation(root_state)
-        task_step = self._task.step(root_position, root_velocity, control_forces)
+        task_step = self._task.step(root_position, root_velocity, normalized_control_forces)
 
         self._episode_step_count.add_(1)
         truncated = self._episode_step_count >= self._maximum_episode_steps
