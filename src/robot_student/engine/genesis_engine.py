@@ -74,7 +74,18 @@ class GenesisCharacter:
         self.n_controlled_dofs = len(self._controlled_dof_indices)
 
     def _setup_controlled_joints(self) -> None:
-        self._controlled_joints = [joint for joint in self._character.joints if joint.n_dofs > 0 and bool(joint.dofs_act_gain.any())]
+        match self._control_mode:
+            case PositionControlMode(joints=joint_settings):
+                available_joint_names = {joint.name for joint in self._character.joints if joint.n_dofs > 0}
+                invalid_joint_names = joint_settings.keys() - available_joint_names
+                if invalid_joint_names:
+                    invalid_joint_names_text = ", ".join(sorted(invalid_joint_names))
+                    raise ValueError(f"Control settings were provided for unknown or zero-DoF joints: {invalid_joint_names_text}")
+
+                self._controlled_joints = [joint for joint in self._character.joints if joint.n_dofs > 0 and joint.name in joint_settings]
+            case _:
+                raise ValueError(f"Unsupported control mode: {self._control_mode}")
+
         self._controlled_dof_indices = [
             degree_of_freedom_index for joint in self._controlled_joints for degree_of_freedom_index in joint.dofs_idx_local
         ]
