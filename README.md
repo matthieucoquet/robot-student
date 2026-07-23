@@ -30,7 +30,7 @@ uv run python -m experiment.ant.train
 
 Set `WEIGHTS_AND_BIASES_RUN_ID` near the top of `experiment/ant/evaluate.py` to the W&B run to evaluate.
 
-Launch the visual evaluation with:
+Launch the evaluation with:
 
 ```sh
 uv run python -m experiment.ant.evaluate

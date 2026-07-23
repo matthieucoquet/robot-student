@@ -1,13 +1,16 @@
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
 import torch
 import wandb
+from genesis.vis.camera import Camera
 from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.genesis_engine import GenesisEngine
+from robot_student.environment import Environment
 from robot_student.model import ActionBoundEnforcement
 
 from .environment import setup_environment
@@ -15,7 +18,7 @@ from .model import Policy
 
 WEIGHTS_AND_BIASES_ENTITY = "mcoquet"
 WEIGHTS_AND_BIASES_PROJECT = "robot-student-ppo"
-WEIGHTS_AND_BIASES_RUN_ID = "rcavakr9"
+WEIGHTS_AND_BIASES_RUN_ID = "5p9wbvd9"
 WEIGHTS_AND_BIASES_ARTIFACT_ALIAS = "latest"
 
 
@@ -50,15 +53,22 @@ def _select_action(policy: Policy, observation: TensorDictBase) -> TensorDictBas
 
 
 @torch.inference_mode()
-def _visualize(policy: Policy, environment) -> None:
+def _visualize(
+    policy: Policy,
+    environment: Environment,
+    engine: Camera,
+) -> None:
     observation = environment.reset()
 
-    while True:
-        action = _select_action(policy, observation)
-        observation, _, terminal, truncated, _ = environment.step(action)
+    try:
+        for _ in range(150):
+            action = _select_action(policy, observation)
+            _, _, terminal, truncated, _ = environment.step(action)
 
-        done = torch.logical_or(terminal, truncated)
-        environment.reset_done(done)
+            done = torch.logical_or(terminal, truncated)
+            observation = environment.reset_done(done)
+    finally:
+        engine.stop_recording()
 
 
 def main() -> None:
@@ -66,11 +76,21 @@ def main() -> None:
 
     engine = GenesisEngine(
         cuda_backend=False,
-        show_viewer=True,
+        show_viewer=False,
         seed=0,
         control_frequency=30,
         simulation_frequency=120,
     )
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    recording_directory = Path("result/ant") / f"evaluation-{WEIGHTS_AND_BIASES_RUN_ID}-{timestamp}.mp4"
+    engine.setup_recording(
+        resolution=(1280, 720),
+        position=(8.0, -8.0, 12.0),
+        environment_index=27,
+        save_to_filename=recording_directory,
+    )
+
     environment = setup_environment(engine, device=engine.device, environment_count=64)
     policy = Policy(
         environment.schema,
@@ -80,7 +100,11 @@ def main() -> None:
     policy.load_state_dict(policy_state)
     policy.eval()
 
-    _visualize(policy, environment)
+    _visualize(
+        policy,
+        environment,
+        engine,
+    )
 
 
 if __name__ == "__main__":
