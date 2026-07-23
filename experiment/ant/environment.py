@@ -7,7 +7,7 @@ from robot_student.environment import CharacterEnvironment, RunInDirectionTask
 
 
 def setup_environment(engine, device: torch.device, environment_count: int = 10):
-    mjcf_path = Path("./experiment/ant/ant.xml")
+    mjcf_path = Path("./experiment/ant/mjcf/ant.xml")
 
     joints_name = [
         "hip_1",
