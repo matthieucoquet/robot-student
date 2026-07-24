@@ -40,6 +40,7 @@ class Policy(nn.Module):
             weight_initializer=OrthogonalInitializer(head_gain=0.01),
             device=device,
         )
+        self.standard_deviation = 0.1
 
     @property
     def action_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -52,15 +53,15 @@ class Policy(nn.Module):
     def create_distribution(self, mean: torch.Tensor) -> ActionDistribution:
         return ActionDistribution(
             mean,
-            standard_deviation=0.1,
+            standard_deviation=self.standard_deviation,
             action_bound_enforcement=self.action_bound_enforcement,
             bounds=self.action_bounds,
         )
 
-    def sample_action(self, observation: TensorDictBase) -> TensorDictBase:
+    def sample_action(self, observation: TensorDictBase, stochastic: bool = True) -> TensorDictBase:
         mean = self(observation)
         distribution = self.create_distribution(mean)
-        action = distribution.sample()
+        action = distribution.sample() if stochastic else distribution.action_mean
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device)
 
     def sample_action_with_log_prob(self, observation: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor]:

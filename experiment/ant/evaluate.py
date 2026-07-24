@@ -7,7 +7,6 @@ from typing import Any
 import torch
 import wandb
 from genesis.vis.camera import Camera
-from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment import Environment
@@ -43,15 +42,6 @@ def _download_policy_state() -> Mapping[str, Any]:
     return policy_state
 
 
-def _select_action(policy: Policy, observation: TensorDictBase) -> TensorDictBase:
-    action_mean = policy.create_distribution(policy(observation)).action_mean
-    return TensorDict(
-        {policy.action_key: action_mean},
-        batch_size=observation.batch_size,
-        device=action_mean.device,
-    )
-
-
 @torch.inference_mode()
 def _visualize(
     policy: Policy,
@@ -62,7 +52,7 @@ def _visualize(
 
     try:
         for _ in range(150):
-            action = _select_action(policy, observation)
+            action = policy.sample_action(observation, stochastic=True)
             _, _, terminal, truncated, _ = environment.step(action)
 
             done = torch.logical_or(terminal, truncated)
@@ -98,6 +88,7 @@ def main() -> None:
         action_bound_enforcement=ActionBoundEnforcement.BOUND_LOSS,
     )
     policy.load_state_dict(policy_state)
+    policy.standard_deviation = 0.01
     policy.eval()
 
     _visualize(

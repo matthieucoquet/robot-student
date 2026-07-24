@@ -200,7 +200,13 @@ class Experiment:
         exception: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.close(exit_code=exception_type is not None)
+        if exception_type is None:
+            exit_code = 0
+        elif issubclass(exception_type, KeyboardInterrupt):
+            exit_code = 130
+        else:
+            exit_code = 1
+        self.close(exit_code=exit_code)
 
     def log_metrics(self, metrics: Mapping[str, ScalarMetric], iteration: int) -> None:
         stored_metrics = {name: value.item() if isinstance(value, torch.Tensor) else value for name, value in metrics.items()}
