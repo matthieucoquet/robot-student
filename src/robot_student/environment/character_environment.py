@@ -26,15 +26,17 @@ class CharacterEnvironment(Environment):
         environment_count: int,
         control_mode: ControlMode,
         task: CharacterTask,
-        device: torch.device,
+        control_frequency: int,
         initial_pose: Sequence[float],
         maximum_episode_steps: int = 1_000,
     ) -> None:
         self._engine = engine
         self._task = task
+        self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
         self._engine.add_ground_plane()
         self._character = engine.add_character(xml_path, control_mode=control_mode)
 
+        device = engine.device
         initial_pose_tensor = torch.tensor(
             initial_pose,
             dtype=torch.float32,
@@ -80,7 +82,7 @@ class CharacterEnvironment(Environment):
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
         normalized_control_forces = self._character.get_normalized_control_forces()
-        for _ in range(self._engine.simulation_steps_per_control_step):
+        for _ in range(self._simulation_steps_per_control_step):
             self._engine.step()
 
         root_state = self._character.get_root_state()

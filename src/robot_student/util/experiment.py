@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,9 +8,6 @@ from typing import Any, Protocol, Self
 import torch
 import wandb
 from torch.utils.tensorboard import SummaryWriter
-
-from .logging import configure_logging
-from .seed import set_seed
 
 ScalarMetric = int | float | torch.Tensor
 StoredScalarMetric = int | float
@@ -165,10 +161,7 @@ class Experiment:
         metric_storages: Sequence[MetricStorage] = (),
         checkpoint_storages: Sequence[CheckpointStorage] = (),
         seed: int = 0,
-        debug_level: int = logging.DEBUG,
     ) -> None:
-        configure_logging(debug_level)
-        set_seed(seed)
         self.seed = seed
         self.engine = engine
         self.device = engine.device
