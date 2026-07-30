@@ -1,6 +1,5 @@
-from .experiment import (
+from .storage import (
     CheckpointStorage,
-    Experiment,
     LocalCheckpointStorage,
     MetricStorage,
     TensorBoardMetricStorage,
@@ -11,7 +10,6 @@ from .seed import set_seed
 
 __all__ = [
     "CheckpointStorage",
-    "Experiment",
     "LocalCheckpointStorage",
     "MetricStorage",
     "TensorBoardMetricStorage",

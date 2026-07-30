@@ -50,7 +50,7 @@ class Policy(nn.Module):
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = self.body_factory(
+        self.body = configuration.body_factory(
             input_shape=observation_schema.shape,
             output_shape=action_schema.shape,
             device=device,
@@ -119,7 +119,7 @@ class ValueFunction(nn.Module):
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = self.body_factory(
+        self.body = configuration.body_factory(
             input_shape=observation_schema.shape,
             output_shape=(1,),
             device=device,

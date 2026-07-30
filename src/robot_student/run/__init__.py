@@ -1,9 +1,6 @@
-from .run import (
-    Run,
-    RunConfig,
-)
+from .run import Run, RunConfiguration
 
 __all__ = [
     "Run",
-    "RunConfig",
+    "RunConfiguration",
 ]

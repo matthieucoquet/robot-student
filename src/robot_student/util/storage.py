@@ -1,9 +1,7 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from types import TracebackType
-from typing import Any, Protocol, Self
+from typing import Any, Protocol
 
 import torch
 import wandb
@@ -150,66 +148,3 @@ class WeightsAndBiasesStorage:
         if self._run is not None:
             self._run.finish(exit_code=exit_code)
             self._run = None
-
-
-class Experiment:
-    def __init__(
-        self,
-        experiment_name: str,
-        run_name: str,
-        engine,
-        metric_storages: Sequence[MetricStorage] = (),
-        checkpoint_storages: Sequence[CheckpointStorage] = (),
-        seed: int = 0,
-    ) -> None:
-        self.seed = seed
-        self.engine = engine
-        self.device = engine.device
-
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        run_directory = Path.cwd() / "result" / experiment_name / f"{timestamp}_{run_name}"
-        run_directory.mkdir(parents=True, exist_ok=True)
-
-        context = ExperimentContext(
-            experiment_name=experiment_name,
-            run_directory=run_directory,
-            seed=seed,
-            device=self.device,
-        )
-
-        self._metric_storages = tuple(metric_storages)
-        self._checkpoint_storages = tuple(checkpoint_storages)
-        storages = (*self._metric_storages, *self._checkpoint_storages)
-        self._storages = tuple({id(storage): storage for storage in storages}.values())
-        for storage in self._storages:
-            storage.initialize(context)
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exception_type: type[BaseException] | None,
-        exception: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        if exception_type is None:
-            exit_code = 0
-        elif issubclass(exception_type, KeyboardInterrupt):
-            exit_code = 130
-        else:
-            exit_code = 1
-        self.close(exit_code=exit_code)
-
-    def log_metrics(self, metrics: Mapping[str, ScalarMetric], iteration: int) -> None:
-        stored_metrics = {name: value.item() if isinstance(value, torch.Tensor) else value for name, value in metrics.items()}
-        for storage in self._metric_storages:
-            storage.log(stored_metrics, iteration)
-
-    def save_checkpoint(self, checkpoint: Checkpoint, iteration: int) -> None:
-        for storage in self._checkpoint_storages:
-            storage.save(checkpoint, iteration)
-
-    def close(self, exit_code: int = 0) -> None:
-        for storage in reversed(self._storages):
-            storage.close(exit_code)

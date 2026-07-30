@@ -24,14 +24,14 @@ class PPOConfiguration:
     policy_optimizer: OptimizerFactory
     value_function_optimizer: OptimizerFactory
     rollout_length: int = 32
-    discount: float = (0.99,)
-    td_lambda: float = (0.95,)
-    advantage_clip: float = (4.0,)
-    value_batch_size: int = (2,)
-    value_epoch_count: int = (2,)
-    policy_batch_size: int = (4,)
-    policy_epoch_count: int = (5,)
-    clip_ratio: float = (0.2,)
+    discount: float = 0.99
+    td_lambda: float = 0.95
+    advantage_clip: float = 4.0
+    value_batch_size: int = 2
+    value_epoch_count: int = 2
+    policy_batch_size: int = 4
+    policy_epoch_count: int = 5
+    clip_ratio: float = 0.2
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
