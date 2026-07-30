@@ -30,6 +30,7 @@ class CharacterEnvironment(Environment):
         initial_pose: Sequence[float],
         maximum_episode_steps: int = 1_000,
     ) -> None:
+        self.count = environment_count
         self._engine = engine
         self._task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
@@ -54,6 +55,10 @@ class CharacterEnvironment(Environment):
         self._schema = self._compute_schema()
         self._maximum_episode_steps = maximum_episode_steps
         self._episode_step_count = torch.zeros(environment_count, device=device, dtype=torch.int64)
+
+    @property
+    def device(self) -> torch.device:
+        return self._engine.device
 
     @property
     def schema(self) -> EnvironmentSchema:

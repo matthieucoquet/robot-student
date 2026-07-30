@@ -1,46 +1,60 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import torch
 from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model import MLP, ActionBoundEnforcement, ActionDistribution
+from robot_student.model.distribution import ActionBoundEnforcement, ActionDistribution
 from robot_student.model.normalizer import RunningNormalization
-from robot_student.model.weight_initializer import OrthogonalInitializer
+
+BodyFactory = Callable[..., nn.Module]
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PolicyConfiguration:
+    body_factory: BodyFactory
+    observation_key: str
+    action_key: str
+    action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS
+    standard_deviation: float = 0.1
+    normalization_clip: float | None = 10.0
 
 
 class Policy(nn.Module):
     def __init__(
         self,
         schema: EnvironmentSchema,
+        *,
+        configuration: PolicyConfiguration,
         device: torch.device | str | None = None,
-        action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS,
     ) -> None:
         super().__init__()
 
-        self.observation_key = "proprioception"
-        self.action_key = "control"
-
+        self.observation_key = configuration.observation_key
+        self.action_key = configuration.action_key
         observation_schema = schema.observations[self.observation_key]
         action_schema = schema.actions[self.action_key]
+
+        self.action_bound_enforcement = configuration.action_bound_enforcement
+        self.standard_deviation = configuration.standard_deviation
+
         lower_bounds, upper_bounds = action_schema.bounds
         self.register_buffer("action_lower_bounds", lower_bounds.to(device=device, dtype=action_schema.data_type))
         self.register_buffer("action_upper_bounds", upper_bounds.to(device=device, dtype=action_schema.data_type))
-        self.action_bound_enforcement = action_bound_enforcement
 
         self.normalizer = RunningNormalization(
             observation_schema.shape,
-            clip=10.0,
+            clip=configuration.normalization_clip,
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = MLP(
+        self.body = self.body_factory(
             input_shape=observation_schema.shape,
             output_shape=action_schema.shape,
-            hidden_layers=[256, 256],
-            weight_initializer=OrthogonalInitializer(head_gain=0.01),
             device=device,
         )
-        self.standard_deviation = 0.1
 
     @property
     def action_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -80,30 +94,34 @@ class Policy(nn.Module):
         self.normalizer.update(observation[self.observation_key])
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ValueFunctionConfiguration:
+    body_factory: BodyFactory
+    observation_key: str
+    normalization_clip: float | None = 10.0
+
+
 class ValueFunction(nn.Module):
     def __init__(
         self,
         schema: EnvironmentSchema,
+        *,
+        configuration: ValueFunctionConfiguration,
         device: torch.device | str | None = None,
     ) -> None:
         super().__init__()
 
-        self.observation_key = "proprioception"
-        self.action_key = "value"
-
+        self.observation_key = configuration.observation_key
         observation_schema = schema.observations[self.observation_key]
-
         self.normalizer = RunningNormalization(
             observation_schema.shape,
-            clip=10.0,
+            clip=configuration.normalization_clip,
             device=device,
             dtype=observation_schema.data_type,
         )
-        self.body = MLP(
+        self.body = self.body_factory(
             input_shape=observation_schema.shape,
             output_shape=(1,),
-            hidden_layers=[256, 256],
-            weight_initializer=OrthogonalInitializer(head_gain=1.0),
             device=device,
         )
 
