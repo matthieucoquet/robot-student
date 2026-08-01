@@ -1,19 +1,47 @@
-from collections.abc import Mapping
-from datetime import datetime
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any
+# from collections.abc import Mapping
+# from datetime import datetime
+# from pathlib import Path
+# from tempfile import TemporaryDirectory
+# from typing import Any
 
-import torch
-import wandb
-from genesis.vis.camera import Camera
+# import torch
+# import wandb
+# from genesis.vis.camera import Cameray
 
-from robot_student.engine.genesis_engine import GenesisEngine
-from robot_student.environment import Environment
-from robot_student.model import ActionBoundEnforcement
 
-from .environment import setup_environment
-from .model import Policy
+import logging
+
+from robot_student.run import Evaluation, EvaluationConfiguration
+from robot_student.util import WeightsAndBiasesStorage
+
+from .environment import AntEnvironmentFactory
+from .learner import get_ppo_factory
+
+
+def configuration():
+    environment = AntEnvironmentFactory(headless=False, environment_count=4)
+    learner = get_ppo_factory()
+
+    weights_and_biases_storage = WeightsAndBiasesStorage()
+
+    return EvaluationConfiguration(
+        experiment_name="ant_walking",
+        run_name="ppo",
+        seed=0,
+        use_cuda=False,
+        debug_level=logging.INFO,
+        environment=environment,
+        learner=learner,
+        metric_storages=(weights_and_biases_storage,),
+        checkpoint_storages=(weights_and_biases_storage,),
+    )
+
+
+with Evaluation(configuration()) as evaluation:
+    evaluation()
+
+
+
 
 WEIGHTS_AND_BIASES_ENTITY = "mcoquet"
 WEIGHTS_AND_BIASES_PROJECT = "robot-student-ppo"
@@ -42,35 +70,30 @@ def _download_policy_state() -> Mapping[str, Any]:
     return policy_state
 
 
-@torch.inference_mode()
-def _visualize(
-    policy: Policy,
-    environment: Environment,
-    engine: Camera,
-) -> None:
-    observation = environment.reset()
+# @torch.inference_mode()
+# def _visualize(
+#     policy: Policy,
+#     environment: Environment,
+#     engine: Camera,
+# ) -> None:
+#     observation = environment.reset()
 
-    try:
-        for _ in range(150):
-            action = policy.sample_action(observation, stochastic=True)
-            _, _, terminal, truncated, _ = environment.step(action)
+#     try:
+#         for _ in range(150):
+#             action = policy.sample_action(observation, stochastic=True)
+#             _, _, terminal, truncated, _ = environment.step(action)
 
-            done = torch.logical_or(terminal, truncated)
-            observation = environment.reset_done(done)
-    finally:
-        engine.stop_recording()
+#             done = torch.logical_or(terminal, truncated)
+#             observation = environment.reset_done(done)
+#     finally:
+#         engine.stop_recording()
 
 
 def main() -> None:
     policy_state = _download_policy_state()
 
-    engine = GenesisEngine(
-        cuda_backend=False,
-        show_viewer=False,
-        seed=0,
-        control_frequency=30,
-        simulation_frequency=120,
-    )
+    # environment = AntEnvironmentFactory(headless=True, environment_count=256)
+    # learner = get_ppo_factory()
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     recording_directory = Path("result/ant") / f"evaluation-{WEIGHTS_AND_BIASES_RUN_ID}-{timestamp}.mp4"
@@ -81,22 +104,22 @@ def main() -> None:
         save_to_filename=recording_directory,
     )
 
-    environment = setup_environment(engine, device=engine.device, environment_count=64)
-    policy = Policy(
-        environment.schema,
-        device=engine.device,
-        action_bound_enforcement=ActionBoundEnforcement.BOUND_LOSS,
-    )
+    # environment = setup_environment(engine, device=engine.device, environment_count=64)
+    # policy = Policy(
+    #     environment.schema,
+    #     device=engine.device,
+    #     action_bound_enforcement=ActionBoundEnforcement.BOUND_LOSS,
+    # )
     policy.load_state_dict(policy_state)
     policy.standard_deviation = 0.01
     policy.eval()
 
-    _visualize(
-        policy,
-        environment,
-        engine,
-    )
+#     _visualize(
+#         policy,
+#         environment,
+#         engine,
+#     )
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

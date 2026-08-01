@@ -21,46 +21,41 @@ Checkpoint = dict[str, Any]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class RunConfiguration:
+class Training:
     experiment_name: str
     run_name: str
     seed: int
     use_cuda: bool
     iteration_count: int
     checkpoint_interval: int
-    metric_log_interval: int = (10,)
+    environment_factory: EnvironmentFactory
+    learner_factory: PPOFactory
+    metric_log_interval: int = 10
     debug_level: int = logging.DEBUG
-    environment: EnvironmentFactory
-    learner: PPOFactory
-    metric_storages: Sequence[MetricStorage] = ((),)
-    checkpoint_storages: Sequence[CheckpointStorage] = ((),)
+    metric_storages: Sequence[MetricStorage] = ()
+    checkpoint_storages: Sequence[CheckpointStorage] = ()
 
 
-class Run:
-    def __init__(self, configuration: RunConfiguration):
-        configure_logging(configuration.debug_level)
-        set_seed(configuration.seed)
+    def _setup(self):
+        configure_logging(self.debug_level)
+        set_seed(self.seed)
 
-        self._environment = configuration.environment.create(use_cuda=configuration.use_cuda, seed=configuration.seed)
-        self._learner = configuration.learner.create(environment=self._environment)
-
-        self._iteration_count = configuration.iteration_count
-        self._checkpoint_interval = configuration.checkpoint_interval
-        self._metric_log_interval = configuration.metric_log_interval
+        self._environment = self.environment_factory.create(use_cuda=self.use_cuda, seed=self.seed)
+        self._learner = self.learner_factory.create(environment=self._environment)
 
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        run_directory = Path.cwd() / "result" / configuration.experiment_name / f"{timestamp}_{configuration.run_name}"
+        run_directory = Path.cwd() / "result" / self.experiment_name / f"{timestamp}_{self.run_name}"
         run_directory.mkdir(parents=True, exist_ok=True)
 
         context = ExperimentContext(
-            experiment_name=configuration.experiment_name,
+            experiment_name=self.experiment_name,
             run_directory=run_directory,
-            seed=configuration.seed,
+            seed=self.seed,
             device=self._environment.device,
         )
 
-        self._metric_storages = tuple(configuration.metric_storages)
-        self._checkpoint_storages = tuple(configuration.checkpoint_storages)
+        self.metric_storages = tuple(self.metric_storages)
+        self.checkpoint_storages = tuple(self.checkpoint_storages)
         storages = (*self._metric_storages, *self._checkpoint_storages)
         self._storages = tuple({id(storage): storage for storage in storages}.values())
         for storage in self._storages:
@@ -68,16 +63,20 @@ class Run:
 
         self._logger = logging.getLogger(__name__)
 
-    def train(self):
+    def __call__(self):
+        self._setup()
+
+        # TODO add wandb life management
+
         self._learner.train()
 
-        for i in range(self._iteration_count):
+        for i in range(self.iteration_count):
             metrics = self._learner.update()
 
-            if i % self._metric_log_interval == 0:
+            if i % self.metric_log_interval == 0:
                 self._log_metrics(metrics, i)
 
-            if i % self._checkpoint_interval == 0 or i == self._iteration_count - 1:
+            if i % self.checkpoint_interval == 0 or i == self.iteration_count - 1:
                 self._logger.debug(f"Saving checkpoint at interval {i}")
                 self._save_checkpoint(
                     self._learner.checkpoint(),
@@ -103,11 +102,11 @@ class Run:
 
     def _log_metrics(self, metrics: Mapping[str, ScalarMetric], iteration: int) -> None:
         stored_metrics = {name: value.item() if isinstance(value, torch.Tensor) else value for name, value in metrics.items()}
-        for storage in self._metric_storages:
+        for storage in self.metric_storages:
             storage.log(stored_metrics, iteration)
 
     def _save_checkpoint(self, checkpoint: Checkpoint, iteration: int) -> None:
-        for storage in self._checkpoint_storages:
+        for storage in self.checkpoint_storages:
             storage.save(checkpoint, iteration)
 
     def close(self, exit_code: int = 0) -> None:

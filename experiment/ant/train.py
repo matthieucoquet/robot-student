@@ -1,19 +1,19 @@
 import logging
 
-from robot_student.run import Run, RunConfiguration
+from robot_student.run import Training
 from robot_student.util import WeightsAndBiasesStorage
 
 from .environment import AntEnvironmentFactory
 from .learner import get_ppo_factory
 
 
-def run_config():
+if __name__ == "__main__":
     environment = AntEnvironmentFactory(headless=True, environment_count=256)
     learner = get_ppo_factory()
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
-    return RunConfiguration(
+    training = Training(
         experiment_name="ant_walking",
         run_name="ppo",
         seed=0,
@@ -22,12 +22,9 @@ def run_config():
         iteration_count=10_000,
         checkpoint_interval=1_000,
         metric_log_interval=10,
-        environment=environment,
-        learner=learner,
+        environment_factory=environment,
+        learner_factory=learner,
         metric_storages=(weights_and_biases_storage,),
         checkpoint_storages=(weights_and_biases_storage,),
     )
-
-
-with Run(run_config()) as run:
-    run.train()
+    training.run()

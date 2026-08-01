@@ -1,6 +1,7 @@
-from .run import Run, RunConfiguration
+from .training import Training
+from .evaluation import Evaluation
 
 __all__ = [
-    "Run",
-    "RunConfiguration",
+    "Training",
+    "Evaluation",
 ]

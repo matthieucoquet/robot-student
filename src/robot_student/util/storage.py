@@ -112,7 +112,7 @@ class WeightsAndBiasesStorage:
 
         self._run = wandb.init(
             project=self._project,
-            name=context.run_directory.name,
+            name=context.run_directory.name,  # TODO maybe just the name
             dir=wandb_directory,
             config=configuration,
             mode="online",
