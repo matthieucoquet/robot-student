@@ -1,4 +1,5 @@
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -13,30 +14,36 @@ Checkpoint = dict[str, Any]
 
 
 @dataclass(frozen=True)
-class ExperimentContext:
+class RunContext:
     experiment_name: str
+    run_name: str
     run_directory: Path
-    seed: int
     device: torch.device | None
 
 
-class MetricStorage(Protocol):
-    def initialize(self, context: ExperimentContext) -> None: ...
+class Storage(Protocol):
+    def initialize(self, context: RunContext) -> None: ...
+    def close(self, exit_code: int) -> None: ...
+
+
+class MetricStorage(Storage, Protocol):
     def log(self, metrics: Mapping[str, StoredScalarMetric], iteration: int) -> None: ...
-    def close(self, exit_code: int) -> None: ...
 
 
-class CheckpointStorage(Protocol):
-    def initialize(self, context: ExperimentContext) -> None: ...
+class CheckpointStorage(Storage, Protocol):
     def save(self, checkpoint: Checkpoint, iteration: int) -> None: ...
-    def close(self, exit_code: int) -> None: ...
+    def load(self, iteration: int, *, device: str | torch.device | None = None) -> Checkpoint: ...
 
 
-class LocalCheckpointStorage:
+class MetricCheckpointStorage(MetricStorage, CheckpointStorage, Protocol):
+    pass
+
+
+class LocalCheckpointStorage(CheckpointStorage):
     def __init__(self) -> None:
         self._checkpoint_directory: Path | None = None
 
-    def initialize(self, context: ExperimentContext) -> None:
+    def initialize(self, context: RunContext) -> None:
         self._checkpoint_directory = context.run_directory / "checkpoints"
         self._checkpoint_directory.mkdir(parents=True, exist_ok=True)
 
@@ -48,12 +55,12 @@ class LocalCheckpointStorage:
         self,
         iteration: int,
         *,
-        map_location: str | torch.device | None = None,
+        device: str | torch.device | None = None,
     ) -> Checkpoint:
         checkpoint_path = self._checkpoint_path(iteration)
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint {iteration} not found in {checkpoint_path.parent}")
-        return torch.load(checkpoint_path, map_location=map_location)
+        return torch.load(checkpoint_path, map_location=device)
 
     def close(self, exit_code: int) -> None:
         pass
@@ -62,13 +69,14 @@ class LocalCheckpointStorage:
         return self._checkpoint_directory / f"checkpoint_{iteration}.pt"
 
 
-class TensorBoardMetricStorage:
+class TensorBoardMetricStorage(MetricStorage, LocalCheckpointStorage):
     def __init__(self) -> None:
         self._writer: SummaryWriter | None = None
 
-    def initialize(self, context: ExperimentContext) -> None:
+    def initialize(self, context: RunContext) -> None:
         if self._writer is not None:
             return
+        super().initialize(context)
         log_directory = context.run_directory / "tensorboard"
         self._writer = SummaryWriter(log_dir=log_directory)
 
@@ -84,45 +92,29 @@ class TensorBoardMetricStorage:
         self._writer = None
 
 
-class WeightsAndBiasesStorage:
-    def __init__(
-        self,
-        project: str = "robot-student-ppo",
-        configuration: Mapping[str, object] | None = None,
-    ) -> None:
-        self._project = project
-        self._configuration = dict(configuration or {})
+class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
+    def __init__(self) -> None:
         self._run: wandb.Run | None = None
         self._checkpoint_directory: Path | None = None
 
-    def initialize(self, context: ExperimentContext) -> None:
+    def initialize(self, context: RunContext) -> None:
         if self._run is not None:
             return
+        super().initialize(context)
 
         wandb_directory = context.run_directory / "wandb"
         wandb_directory.mkdir(parents=True, exist_ok=True)
-        configuration = dict(self._configuration)
-        configuration.update(
-            {
-                "experiment_name": context.experiment_name,
-                "seed": context.seed,
-                "device": str(context.device),
-            }
-        )
 
         self._run = wandb.init(
-            project=self._project,
-            name=context.run_directory.name,  # TODO maybe just the name
+            project=context.experiment_name,
+            name=context.run_name,
             dir=wandb_directory,
-            config=configuration,
             mode="online",
             force=True,
             save_code=False,
         )
         self._run.define_metric("iteration")
         self._run.define_metric("*", step_metric="iteration")
-        self._checkpoint_directory = wandb_directory / "checkpoints"
-        self._checkpoint_directory.mkdir(parents=True, exist_ok=True)
 
     def log(self, metrics: Mapping[str, StoredScalarMetric], iteration: int) -> None:
         logged_values = dict(metrics)
@@ -130,21 +122,46 @@ class WeightsAndBiasesStorage:
         self._run.log(logged_values)
 
     def save(self, checkpoint: Checkpoint, iteration: int) -> None:
-        checkpoint_path = self._checkpoint_directory / f"checkpoint_{iteration}.pt"
-        torch.save(checkpoint, checkpoint_path)
+        super().save(checkpoint, iteration)
 
         artifact = wandb.Artifact(
             name=f"checkpoint-{self._run.id}",
             type="model",
             metadata={"iteration": iteration},
         )
-        artifact.add_file(checkpoint_path, name="checkpoint.pt")
+        artifact.add_file(self._checkpoint_path(iteration), name="checkpoint.pt")
         self._run.log_artifact(
             artifact,
             aliases=["latest", f"iteration-{iteration}"],
         )
 
+    def load(
+        self,
+        iteration: int,
+        *,
+        device: str | torch.device | None = None,
+    ) -> Checkpoint:
+        return super().load(iteration, device=device)  # TODO
+
     def close(self, exit_code: int) -> None:
         if self._run is not None:
             self._run.finish(exit_code=exit_code)
             self._run = None
+
+
+@contextmanager
+def managed_storage(storage: Storage) -> Iterator[Storage]:
+    exit_code = 1
+
+    try:
+        yield storage
+    except KeyboardInterrupt:
+        exit_code = 130
+        raise SystemExit(exit_code) from None
+    except SystemExit as exception:
+        exit_code = exception.code if isinstance(exception.code, int) else int(exception.code is not None)
+        raise
+    else:
+        exit_code = 0
+    finally:
+        storage.close(exit_code)
