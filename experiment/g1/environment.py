@@ -12,7 +12,7 @@ from robot_student.run.environment_factory import EnvironmentFactory
 class G1EnvironmentFactory(EnvironmentFactory):
     action_limit_scale: float = 1.1
 
-    def _create_environment(
+    def create_environment(
         self,
         engine: GenesisEngine,
     ) -> Environment:
