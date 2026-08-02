@@ -19,10 +19,10 @@ if __name__ == "__main__":
         use_cuda=True,
         debug_level=logging.INFO,
         iteration_count=10_000,
-        checkpoint_interval=1_000,
+        checkpoint_interval=100,
         metric_log_interval=10,
         environment_factory=environment,
         learner_factory=learner,
-        checkpoint_metric_storage=weights_and_biases_storage,
+        run_storage=weights_and_biases_storage,
     )
     training.run()

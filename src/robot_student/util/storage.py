@@ -17,8 +17,10 @@ Checkpoint = dict[str, Any]
 class RunContext:
     experiment_name: str
     run_name: str
+    run_id: str
     run_directory: Path
     device: torch.device | None
+    is_evaluation: bool = False
 
 
 class Storage(Protocol):
@@ -46,6 +48,7 @@ class LocalCheckpointStorage(CheckpointStorage):
     def initialize(self, context: RunContext) -> None:
         self._checkpoint_directory = context.run_directory / "checkpoints"
         self._checkpoint_directory.mkdir(parents=True, exist_ok=True)
+        (context.run_directory / "run_id.txt").write_text(context.run_id, encoding="utf-8")
 
     def save(self, checkpoint: Checkpoint, iteration: int) -> None:
         checkpoint_path = self._checkpoint_path(iteration)
@@ -66,7 +69,27 @@ class LocalCheckpointStorage(CheckpointStorage):
         pass
 
     def _checkpoint_path(self, iteration: int) -> Path:
-        return self._checkpoint_directory / f"checkpoint_{iteration}.pt"
+        if iteration >= 0:
+            return self._checkpoint_directory / f"checkpoint_{iteration}.pt"
+
+        latest_iteration = -1
+        latest_checkpoint = None
+
+        for checkpoint_path in self._checkpoint_directory.glob("checkpoint_*.pt"):
+            iteration_text = checkpoint_path.stem.removeprefix("checkpoint_")
+            try:
+                iteration = int(iteration_text)
+            except ValueError:
+                continue
+
+            if iteration > latest_iteration:
+                latest_iteration = iteration
+                latest_checkpoint = checkpoint_path
+
+        if latest_checkpoint is None:
+            raise FileNotFoundError(f"No checkpoints found in {self._checkpoint_directory}")
+
+        return latest_checkpoint
 
 
 class TensorBoardMetricStorage(MetricStorage, LocalCheckpointStorage):
@@ -105,16 +128,20 @@ class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
         wandb_directory = context.run_directory / "wandb"
         wandb_directory.mkdir(parents=True, exist_ok=True)
 
+        self.training_id = context.run_id
+
         self._run = wandb.init(
             project=context.experiment_name,
             name=context.run_name,
+            id=None if context.is_evaluation else context.run_id,
             dir=wandb_directory,
+            job_type="evaluation" if context.is_evaluation else "training",
             mode="online",
-            force=True,
             save_code=False,
         )
-        self._run.define_metric("iteration")
-        self._run.define_metric("*", step_metric="iteration")
+        if not context.is_evaluation:
+            self._run.define_metric("iteration")
+            self._run.define_metric("*", step_metric="iteration")
 
     def log(self, metrics: Mapping[str, StoredScalarMetric], iteration: int) -> None:
         logged_values = dict(metrics)
@@ -141,7 +168,18 @@ class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
         *,
         device: str | torch.device | None = None,
     ) -> Checkpoint:
-        return super().load(iteration, device=device)  # TODO
+        try:
+            return super().load(iteration, device=device)
+        except FileNotFoundError:
+            artifact_name = f"checkpoint-{self.training_id}"
+            artifact_alias = "latest" if iteration == -1 else f"iteration-{iteration}"
+            artifact = self._run.use_artifact(f"{artifact_name}:{artifact_alias}")
+
+            checkpoint_directory = Path(artifact.download(root=self._checkpoint_directory))
+            checkpoint_path = checkpoint_directory / "checkpoint.pt"
+            if not checkpoint_path.is_file():
+                raise FileNotFoundError(f"Artifact {artifact_name}:{artifact_alias} does not contain checkpoint.pt") from None
+            return torch.load(checkpoint_path, map_location=device)
 
     def close(self, exit_code: int) -> None:
         if self._run is not None:

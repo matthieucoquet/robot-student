@@ -2,7 +2,6 @@ from pathlib import Path
 
 import genesis as gs
 import torch
-from genesis.vis.camera import Camera
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.genesis_character import GenesisCharacter
@@ -61,7 +60,7 @@ class GenesisEngine:
         show_gui: bool = False,
         save_to_filename: Path,
         fps: int = 30,
-    ) -> Camera:
+    ) -> None:
         self._recording_camera = self._scene.add_camera(
             res=resolution,
             pos=position,

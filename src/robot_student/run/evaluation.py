@@ -1,17 +1,15 @@
 import logging
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from types import TracebackType
-from typing import Any, Self
+from typing import Any
 
 import torch
 
 from robot_student.algorithm import PPOFactory
-from robot_student.util.storage import CheckpointStorage, ExperimentContext, MetricStorage
 from robot_student.util.logging import configure_logging
 from robot_student.util.seed import set_seed
+from robot_student.util.storage import MetricCheckpointStorage, RunContext, managed_storage
 
 from .environment_factory import EnvironmentFactory
 
@@ -20,86 +18,96 @@ StoredScalarMetric = int | float
 Checkpoint = dict[str, Any]
 
 
-@dataclass(frozen=True, kw_only=True, slots=True)
-class EvaluationConfiguration:
-    # experiment_name: str
-    # run_name: str
+@dataclass(kw_only=True)
+class RecordingConfiguration:
+    position: tuple[float, float, float]
+    environment_index: int | None = None
+    resolution: tuple[int, int] = (1280, 720)
+
+
+@dataclass(kw_only=True)
+class Evaluation:
+    experiment_name: str
+    run_name: str
+    run_id: str
     seed: int
     use_cuda: bool
-    environment: EnvironmentFactory
-    learner: PPOFactory
+    environment_factory: EnvironmentFactory
+    learner_factory: PPOFactory
     debug_level: int = logging.DEBUG
-    checkpoint_storages: Sequence[CheckpointStorage] = ()
+    run_storage: MetricCheckpointStorage
+    recording: RecordingConfiguration | None = None
 
+    def _setup(self):
+        configure_logging(self.debug_level)
+        set_seed(self.seed)
 
-class Evaluator:
-    def __init__(self):
-        pass
+        self._engine = self.environment_factory.create_engine(use_cuda=self.use_cuda, seed=self.seed)
 
+        run_directory = self._find_directory()
 
-class Evaluation:
-    def __init__(self, configuration: EvaluationConfiguration):
-        configure_logging(configuration.debug_level)
-        set_seed(configuration.seed)
+        if self.recording is not None:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            recording_directory = run_directory / "evaluation" / f"recording-{timestamp}.mp4"
 
-        self._environment = configuration.environment.create(use_cuda=configuration.use_cuda, seed=configuration.seed)
-        self._learner = configuration.learner.create(environment=self._environment)
+            environment_index = self.recording.environment_index
+            if environment_index is None:
+                environment_index = self.environment_factory.environment_count // 2
 
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        run_directory = Path.cwd() / "result" / configuration.experiment_name / f"{timestamp}_{configuration.run_name}"
-        run_directory.mkdir(parents=True, exist_ok=True)
+            self._engine.setup_recording(
+                resolution=self.recording.resolution,
+                position=self.recording.position,
+                environment_index=environment_index,
+                save_to_filename=recording_directory,
+            )
 
-        context = ExperimentContext(
-            experiment_name=configuration.experiment_name,
+        self._environment = self.environment_factory.create_environment(engine=self._engine)
+        self._learner = self.learner_factory.create(environment=self._environment)
+
+        context = RunContext(
+            experiment_name=self.experiment_name,
+            run_name=self.run_name,
+            run_id=self.run_id,
             run_directory=run_directory,
-            seed=configuration.seed,
             device=self._environment.device,
+            is_evaluation=True,
         )
-
-        self._metric_storages = tuple(configuration.metric_storages)
-        self._checkpoint_storages = tuple(configuration.checkpoint_storages)
-        storages = (*self._metric_storages, *self._checkpoint_storages)
-        self._storages = tuple({id(storage): storage for storage in storages}.values())
-        for storage in self._storages:
-            storage.initialize(context)
+        self.run_storage.initialize(context)
 
         self._logger = logging.getLogger(__name__)
 
     @torch.inference_mode()
-    def __call__(self):
-        observation = environment.reset()
+    def run(self):
+        self._setup()
 
-        try:
-            for _ in range(150):
-                action = policy.sample_action(observation, stochastic=True)
-                _, _, terminal, truncated, _ = environment.step(action)
+        with managed_storage(self.run_storage):
+            checkpoint = self.run_storage.load(iteration=-1, device=self._environment.device)
+            policy_state = checkpoint.get("policy")
+            policy = self._learner.policy
+            policy.load_state_dict(policy_state)
+            policy.standard_deviation = 0.01
+            policy.eval()
 
-                done = torch.logical_or(terminal, truncated)
-                observation = environment.reset_done(done)
-        finally:
-            engine.stop_recording()
+            observation = self._environment.reset()
 
-    def __enter__(self) -> Self:
-        return self
+            try:
+                for _ in range(150):
+                    action = policy.sample_action(observation, stochastic=True)
+                    _, _, terminal, truncated, _ = self._environment.step(action)
 
-    def __exit__(
-        self,
-        exception_type: type[BaseException] | None,
-        exception: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        if exception_type is None:
-            exit_code = 0
-        elif issubclass(exception_type, KeyboardInterrupt):
-            exit_code = 130
-        else:
-            exit_code = 1
-        self.close(exit_code=exit_code)
+                    done = torch.logical_or(terminal, truncated)
+                    observation = self._environment.reset_done(done)
+            finally:
+                # self._engine.stop_recording()
+                pass
 
-    def _save_checkpoint(self, checkpoint: Checkpoint, iteration: int) -> None:
-        for storage in self._checkpoint_storages:
-            storage.save(checkpoint, iteration)
-
-    def close(self, exit_code: int = 0) -> None:
-        for storage in reversed(self._storages):
-            storage.close(exit_code)
+    def _find_directory(self):
+        result_directory = Path.cwd() / "result" / self.experiment_name
+        if result_directory.exists():
+            for directory in result_directory.iterdir():
+                if directory.is_dir() and directory.name.endswith(self.run_id):
+                    return directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        run_directory = result_directory / f"{timestamp}_{self.run_name}_{self.run_id}"
+        run_directory.mkdir(parents=True, exist_ok=True)
+        return run_directory

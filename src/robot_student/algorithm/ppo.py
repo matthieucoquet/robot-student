@@ -72,6 +72,10 @@ class PPO:
 
         self._logger = logging.getLogger(__name__)
 
+    @property
+    def policy(self) -> Policy:
+        return self._policy
+
     def train(self) -> None:
         self._policy.train()
         self._value_function.train()
