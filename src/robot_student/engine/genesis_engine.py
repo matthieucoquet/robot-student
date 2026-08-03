@@ -2,7 +2,6 @@ from pathlib import Path
 
 import genesis as gs
 import torch
-from genesis.vis.camera import Camera
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.genesis_character import GenesisCharacter
@@ -14,18 +13,13 @@ class GenesisEngine:
         cuda_backend: bool = False,
         show_viewer: bool = True,
         seed: int | None = None,
-        control_frequency: int = 100,
-        simulation_frequency: int = 100,
+        simulation_frequency: int = 120,
     ) -> None:
         super().__init__()
-        if simulation_frequency % control_frequency != 0:
-            raise ValueError("simulation_frequency must be an integer multiple of control_frequency")
 
         gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
 
-        self.control_frequency = control_frequency
         self.simulation_frequency = simulation_frequency
-        self.simulation_steps_per_control_step = simulation_frequency // control_frequency
         self._scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=1.0 / simulation_frequency),
             show_viewer=show_viewer,
@@ -66,7 +60,7 @@ class GenesisEngine:
         show_gui: bool = False,
         save_to_filename: Path,
         fps: int = 30,
-    ) -> Camera:
+    ) -> None:
         self._recording_camera = self._scene.add_camera(
             res=resolution,
             pos=position,

@@ -1,4 +1,3 @@
-from robot_student.algorithm.ppo import PPO
-from robot_student.algorithm.rollout_buffer import RolloutBuffer
+from robot_student.algorithm.ppo import PPO, PPOConfiguration, PPOFactory
 
-__all__ = ["PPO", "RolloutBuffer"]
+__all__ = ["PPO", "PPOConfiguration", "PPOFactory"]

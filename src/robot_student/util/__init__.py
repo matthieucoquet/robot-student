@@ -1,19 +1,17 @@
-from .experiment import (
+from .logging import configure_logging
+from .seed import set_seed
+from .storage import (
     CheckpointStorage,
-    Experiment,
     LocalCheckpointStorage,
-    MetricStorage,
+    MetricCheckpointStorage,
     TensorBoardMetricStorage,
     WeightsAndBiasesStorage,
 )
-from .logging import configure_logging
-from .seed import set_seed
 
 __all__ = [
     "CheckpointStorage",
-    "Experiment",
     "LocalCheckpointStorage",
-    "MetricStorage",
+    "MetricCheckpointStorage",
     "TensorBoardMetricStorage",
     "WeightsAndBiasesStorage",
     "configure_logging",

@@ -1,85 +1,105 @@
 import logging
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
-from torch import nn
 from torch.optim import Optimizer
 
-from robot_student.algorithm.rollout_buffer import RolloutBuffer
 from robot_student.environment.environment import Environment
-from robot_student.model import ActionBoundEnforcement
+from robot_student.model import ActionBoundEnforcement, Policy, PolicyConfiguration, ValueFunction, ValueFunctionConfiguration
+
+from .rollout_buffer import RolloutBuffer
+
+OptimizerFactory = Callable[[Iterable[torch.Tensor]], Optimizer]
 
 if TYPE_CHECKING:
-    from robot_student.util import Experiment
+    pass
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PPOConfiguration:
+    policy: PolicyConfiguration
+    value_function: ValueFunctionConfiguration
+    policy_optimizer: OptimizerFactory
+    value_function_optimizer: OptimizerFactory
+    rollout_length: int = 32
+    discount: float = 0.99
+    td_lambda: float = 0.95
+    advantage_clip: float = 4.0
+    value_batch_size: int = 2
+    value_epoch_count: int = 2
+    policy_batch_size: int = 4
+    policy_epoch_count: int = 5
+    clip_ratio: float = 0.2
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PPOFactory:
+    configuration: PPOConfiguration
+
+    def create(self, *, environment: Environment):
+        return PPO(environment=environment, configuration=self.configuration)
 
 
 class PPO:
     def __init__(
         self,
         environment: Environment,
-        policy: nn.Module,
-        value_function: nn.Module,
-        policy_optimizer: Optimizer,
-        value_optimizer: Optimizer,
-        rollout_buffer: RolloutBuffer,
-        discount: float = 0.99,
-        td_lambda: float = 0.95,
-        advantage_clip: float = 4.0,
-        value_batch_size: int = 2,
-        value_epoch_count: int = 2,
-        policy_batch_size: int = 4,
-        policy_epoch_count: int = 5,
-        metric_log_interval: int = 10,
-        clip_ratio: float = 0.2,
+        configuration: PPOConfiguration,
     ) -> None:
         self._environment = environment
-        self._policy = policy
-        self._value_function = value_function
-        self._policy_optimizer = policy_optimizer
-        self._value_optimizer = value_optimizer
-        self._rollout_buffer = rollout_buffer
-        self._discount = discount
-        self._lambda = td_lambda
-        self._advantage_clip = advantage_clip
-        self._value_batch_size = value_batch_size
-        self._value_epoch_count = value_epoch_count
-        self._policy_batch_size = policy_batch_size
-        self._policy_epoch_count = policy_epoch_count
-        self._metric_log_interval = metric_log_interval
-        self._clip_ratio = clip_ratio
+        device = environment.device
+        self._policy = Policy(environment.schema, configuration=configuration.policy, device=device)
+        self._value_function = ValueFunction(environment.schema, configuration=configuration.value_function, device=device)
+
+        self._policy_optimizer = configuration.policy_optimizer(self._policy.parameters())
+        self._value_optimizer = configuration.value_function_optimizer(self._value_function.parameters())
+
+        self._rollout_buffer = RolloutBuffer(
+            schema=environment.schema, rollout_length=configuration.rollout_length, environment_count=environment.count, device=device
+        )
+
+        self._discount = configuration.discount
+        self._lambda = configuration.td_lambda
+        self._advantage_clip = configuration.advantage_clip
+        self._value_batch_size = configuration.value_batch_size
+        self._value_epoch_count = configuration.value_epoch_count
+        self._policy_batch_size = configuration.policy_batch_size
+        self._policy_epoch_count = configuration.policy_epoch_count
+        self._clip_ratio = configuration.clip_ratio
         self._action_bound_enforcement = self._policy.action_bound_enforcement
 
         self._logger = logging.getLogger(__name__)
 
-    def train(self, experiment: "Experiment", iteration_count: int, checkpoint_interval: int) -> None:
+    @property
+    def policy(self) -> Policy:
+        return self._policy
+
+    def train(self) -> None:
         self._policy.train()
         self._value_function.train()
 
         self._observations = self._environment.reset()
 
-        for i in range(iteration_count):
-            metrics = self._collect_rollouts()
-            metrics |= self._update_value_function()
-            metrics |= self._update_policy()
-            with torch.no_grad():
-                observations = self._rollout_buffer.observations
-                self._policy.update_normalizer(observations)
-                self._value_function.update_normalizer(observations)
+    def update(self) -> dict[str, torch.Tensor]:
+        metrics = self._collect_rollouts()
+        metrics |= self._update_value_function()
+        metrics |= self._update_policy()
+        with torch.no_grad():
+            observations = self._rollout_buffer.observations
+            self._policy.update_normalizer(observations)
+            self._value_function.update_normalizer(observations)
 
-            if i % self._metric_log_interval == 0:
-                experiment.log_metrics(metrics, i)
+        return metrics
 
-            self._logger.debug(f"PPO iterations {i}")
-            if i % checkpoint_interval == 0 or i == iteration_count - 1:
-                experiment.save_checkpoint(
-                    {
-                        "policy": self._policy.state_dict(),
-                        "value_function": self._value_function.state_dict(),
-                        "policy_optimizer": self._policy_optimizer.state_dict(),
-                        "value_optimizer": self._value_optimizer.state_dict(),
-                    },
-                    i,
-                )
+    def checkpoint(self):
+        return {
+            "policy": self._policy.state_dict(),
+            "value_function": self._value_function.state_dict(),
+            "policy_optimizer": self._policy_optimizer.state_dict(),
+            "value_optimizer": self._value_optimizer.state_dict(),
+        }
 
     @torch.no_grad()
     def _collect_rollouts(self) -> None:
