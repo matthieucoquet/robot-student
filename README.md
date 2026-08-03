@@ -28,7 +28,7 @@ uv run python -m experiment.ant.train
 
 ## Evaluate Ant
 
-Set `WEIGHTS_AND_BIASES_RUN_ID` near the top of `experiment/ant/evaluate.py` to the W&B run to evaluate.
+Edit the run_id from the training run in `experiment/ant/evaluate.py`.
 
 Launch the evaluation with:
 

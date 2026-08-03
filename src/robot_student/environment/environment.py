@@ -9,6 +9,16 @@ from robot_student.environment.schema import EnvironmentSchema
 class Environment(ABC):
     @property
     @abstractmethod
+    def device(self) -> torch.device:
+        """Return the device on which environment tensors are stored."""
+
+    @property
+    @abstractmethod
+    def count(self) -> int:
+        """Return the number of parallel environments."""
+
+    @property
+    @abstractmethod
     def schema(self) -> EnvironmentSchema:
         """Return the observation and action schema."""
 

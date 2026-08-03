@@ -98,8 +98,7 @@ class Evaluation:
                     done = torch.logical_or(terminal, truncated)
                     observation = self._environment.reset_done(done)
             finally:
-                # self._engine.stop_recording()
-                pass
+                self._engine.stop_recording()
 
     def _find_directory(self):
         result_directory = Path.cwd() / "result" / self.experiment_name
