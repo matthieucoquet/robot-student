@@ -7,17 +7,17 @@ from .environment import G1EnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = G1EnvironmentFactory(headless=True, environment_count=16)
+    environment = G1EnvironmentFactory(headless=False, environment_count=16)
     learner = get_ppo_factory()
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
-    recording_configuration = RecordingConfiguration(position=(2.0, -2.0, 3.0), resolution=(1280, 720), environment_index=9)
+    recording_configuration = RecordingConfiguration(position=(2.0, -2.0, 3.0), resolution=(1920, 1080), environment_index=9)
 
     evaluation = Evaluation(
         experiment_name="g1_walking",
         run_name="ppo",
-        run_id="19c67433be0cae9d",
+        run_id="54170519bb32e637",
         seed=0,
         use_cuda=True,
         debug_level=logging.INFO,

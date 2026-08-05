@@ -35,20 +35,7 @@ class G1EnvironmentFactory(EnvironmentFactory):
             joint_settings[joint] = PositionControlSettings(
                 kp=14.25062309787429,
                 kd=0.907222843292423,
-                force_range=(-25.0, 25.0),
-            )
-
-        joints_name_group = [
-            "left_hip_pitch_joint",
-            "left_hip_yaw_joint",
-            "right_hip_pitch_joint",
-            "right_hip_yaw_joint",
-            "waist_yaw_joint",
-        ]
-        for joint in joints_name_group:
-            joint_settings[joint] = PositionControlSettings(
-                kp=14.25062309787429,
-                kd=0.907222843292423,
+                armature=0.003609725,
                 force_range=(-25.0, 25.0),
             )
 
@@ -63,6 +50,7 @@ class G1EnvironmentFactory(EnvironmentFactory):
             joint_settings[joint] = PositionControlSettings(
                 kp=40.17923863450712,
                 kd=2.557889775413375,
+                armature=0.01017752004132231,
                 force_range=(-88.0, 88.0),
             )
 
@@ -76,6 +64,7 @@ class G1EnvironmentFactory(EnvironmentFactory):
             joint_settings[joint] = PositionControlSettings(
                 kp=99.09842777666111,
                 kd=6.308801853496639,
+                armature=0.025101925,
                 force_range=(-139.0, 139.0),
             )
 
@@ -89,6 +78,7 @@ class G1EnvironmentFactory(EnvironmentFactory):
             joint_settings[joint] = PositionControlSettings(
                 kp=28.50124619574858,
                 kd=1.814445686584846,
+                armature=0.00721945,
                 force_range=(-50.0, 50.0),
             )
 
@@ -130,7 +120,9 @@ class G1EnvironmentFactory(EnvironmentFactory):
             0.0,  # Right wrist roll.
         )
 
-        task = RunInDirectionTask(device=engine.device)
+        task = RunInDirectionTask(
+            device=engine.device, height_range=(0.6, 1.5), target_speed_weight=0.5, facing_direction_weight=0.5, control_cost_weight=1.0
+        )
 
         return CharacterEnvironment(
             engine,

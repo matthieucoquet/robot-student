@@ -40,6 +40,7 @@ class GenesisCharacter:
             case PositionControlMode(joints=joint_settings):
                 position_gain_values = []
                 velocity_gain_values = []
+                armature_values = []
                 force_lower_bounds = []
                 force_upper_bounds = []
                 maximum_control_forces = []
@@ -52,12 +53,14 @@ class GenesisCharacter:
                     for _ in joint.dofs_idx_local:
                         position_gain_values.append(settings.kp)
                         velocity_gain_values.append(settings.kd)
+                        armature_values.append(settings.armature)
                         force_lower_bounds.append(force_lower_bound)
                         force_upper_bounds.append(force_upper_bound)
                         maximum_control_forces.append(maximum_control_force)
 
                 self._character.set_dofs_kp(position_gain_values, self._controlled_dof_indices)
                 self._character.set_dofs_kv(velocity_gain_values, self._controlled_dof_indices)
+                self._character.set_dofs_armature(armature_values, self._controlled_dof_indices)
                 self._character.set_dofs_force_range(force_lower_bounds, force_upper_bounds, self._controlled_dof_indices)
                 self._inverse_maximum_control_forces = torch.tensor(
                     maximum_control_forces,

@@ -7,7 +7,7 @@ from .environment import G1EnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = G1EnvironmentFactory(headless=True, environment_count=2048)
+    environment = G1EnvironmentFactory(headless=True, environment_count=4096)
     learner = get_ppo_factory()
 
     weights_and_biases_storage = WeightsAndBiasesStorage()

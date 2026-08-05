@@ -1,24 +1,12 @@
 # Repository Guidelines
 
-## Purpose
-
-This Python library implements high-throughput PPO training with Genesis, with DeepMimic, BeyondMimic, and potential Newton support planned later. Prioritize training throughput: avoid unnecessary synchronization, device transfers, allocations, and Python overhead in performance-critical paths.
-
-## Layout
-
-- `src/robot_student/` contains PPO, rollout storage, Genesis integration, environments, models, and utilities.
-- `experiment/` contains Python-configured training experiments; `experiment/ant/` is the current example.
-- `result/` contains generated training output and is ignored.
-
-## Development
-
-The project uses `uv` and requires Python `>=3.13,<3.14`.
-
-- `uv sync --locked` installs the locked environment.
-- `uv run python -m experiment.ant.train` launches the CUDA Ant experiment with its viewer.
-- `uv run ruff format` formats the code.
-- `uv run ruff format --check` and `uv run ruff check` run the CI checks.
-
-## Conventions
-
-Follow PEP 8, use descriptive names without abbreviations, and follow Ruff's configuration in `pyproject.toml`. Keep changes clean and minimal, preserve user changes and `uv.lock`, and keep documentation aligned with actual behavior.
+- `robot-student` implements high-throughput PPO with PyTorch, TensorDict, and Genesis. Optimize rollout collection, environment stepping, return computation, and PPO updates.
+- `src/robot_student/` is the library; `experiment/{ant,g1}/` contains experiment code and MJCF assets; ignored outputs belong in `result/`.
+- Use `uv` and Python `>=3.13,<3.14`. Install with `uv sync --locked`.
+- Before handoff, run `uv run ruff format --check` and `uv run ruff check`. Format with `uv run ruff format`; run focused tests with `uv run pytest <test-path>` when available.
+- Do not run full training or evaluation for routine verification. They generally require CUDA, may use Weights & Biases, and write artifacts.
+- Preserve tensor shapes, dtypes, device placement, `TensorDict` batch semantics, and inference/no-grad boundaries.
+- In hot paths, avoid unnecessary synchronization, CPU transfers, allocations, and per-environment Python loops. Prefer batched operations and preallocated buffers.
+- Follow Ruff's 140-character line length. Use descriptive names without abbreviations; standard terms such as PPO, KL, TD, DOF, and MLP are fine.
+- Keep changes focused, preserve unrelated work, and keep documentation aligned with behavior.
+- Do not preserve backward compatibility.
