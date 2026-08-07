@@ -6,7 +6,8 @@ from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
 from robot_student.environment.schema import EnvironmentSchema
-from robot_student.model.distribution import ActionBoundEnforcement, ActionDistribution
+from robot_student.model.action import ActionBoundEnforcement, PositionTargetMode
+from robot_student.model.distribution import ActionDistribution
 from robot_student.model.normalizer import RunningNormalization
 
 BodyFactory = Callable[..., nn.Module]
@@ -18,6 +19,7 @@ class PolicyConfiguration:
     observation_key: str
     action_key: str
     action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS
+    position_target_mode: PositionTargetMode = PositionTargetMode.ABSOLUTE
     standard_deviation: float = 0.1
     normalization_clip: float | None = 10.0
 
@@ -41,8 +43,28 @@ class Policy(nn.Module):
         self.standard_deviation = configuration.standard_deviation
 
         lower_bounds, upper_bounds = action_schema.bounds
-        self.register_buffer("action_lower_bounds", lower_bounds.to(device=device, dtype=action_schema.data_type))
-        self.register_buffer("action_upper_bounds", upper_bounds.to(device=device, dtype=action_schema.data_type))
+        lower_bounds = lower_bounds.to(device=device, dtype=action_schema.data_type)
+        upper_bounds = upper_bounds.to(device=device, dtype=action_schema.data_type)
+
+        match configuration.position_target_mode:
+            case PositionTargetMode.ABSOLUTE:
+                normalized_mean_offset = torch.zeros(action_schema.shape, device=device, dtype=action_schema.data_type)
+            case PositionTargetMode.DEFAULT_POSE_OFFSET:
+                default_value = action_schema.default_value
+
+                default_value = default_value.to(device=device, dtype=action_schema.data_type)
+                bound_center = (lower_bounds + upper_bounds) * 0.5
+                bound_half_range = (upper_bounds - lower_bounds) * 0.5
+                normalized_mean_offset = (default_value - bound_center) / bound_half_range
+                if torch.any(normalized_mean_offset <= -1.0) or torch.any(normalized_mean_offset >= 1.0):
+                    raise ValueError("The action schema default value must lie within the action bounds")
+
+                if self.action_bound_enforcement is ActionBoundEnforcement.TANH_DISTRIBUTION:
+                    normalized_mean_offset = torch.atanh(normalized_mean_offset)
+
+        self.register_buffer("action_lower_bounds", lower_bounds)
+        self.register_buffer("action_upper_bounds", upper_bounds)
+        self.register_buffer("normalized_mean_offset", normalized_mean_offset)
 
         self.normalizer = RunningNormalization(
             observation_schema.shape,
@@ -66,7 +88,7 @@ class Policy(nn.Module):
 
     def create_distribution(self, mean: torch.Tensor) -> ActionDistribution:
         return ActionDistribution(
-            mean,
+            mean + self.normalized_mean_offset,  # We could add the offset in the initial bias, but it's simpler to do it here
             standard_deviation=self.standard_deviation,
             action_bound_enforcement=self.action_bound_enforcement,
             bounds=self.action_bounds,

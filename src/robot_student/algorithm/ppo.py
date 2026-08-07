@@ -7,7 +7,8 @@ import torch
 from torch.optim import Optimizer
 
 from robot_student.environment.environment import Environment
-from robot_student.model import ActionBoundEnforcement, Policy, PolicyConfiguration, ValueFunction, ValueFunctionConfiguration
+from robot_student.model import Policy, PolicyConfiguration, ValueFunction, ValueFunctionConfiguration
+from robot_student.model.action import ActionBoundEnforcement
 
 from .rollout_buffer import RolloutBuffer
 
@@ -180,6 +181,7 @@ class PPO:
 
         log_loss_sum = torch.zeros((), device=observations.device)
         log_clip_fraction_sum = torch.zeros((), device=observations.device)
+        log_approximate_kl_sum = torch.zeros((), device=observations.device)
         action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.BOUND_LOSS
         if action_bound_loss_enabled:
             log_action_bound_loss_sum = torch.zeros((), device=observations.device)
@@ -188,8 +190,10 @@ class PPO:
         for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
             log_probability, action_mean = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
 
-            ratio = torch.exp(log_probability - old_log_probabilities[minibatch_indices])
+            log_ratio = log_probability - old_log_probabilities[minibatch_indices]
+            ratio = torch.exp(log_ratio)
             clip_fraction = ((ratio - 1.0).abs() > self._clip_ratio).float().mean()
+            approximate_kl = ((ratio - 1.0) - log_ratio).mean()
             unclipped_loss = -advantages[minibatch_indices] * ratio
             clipped_loss = -advantages[minibatch_indices] * torch.clamp(ratio, 1.0 - self._clip_ratio, 1.0 + self._clip_ratio)
             loss = torch.max(unclipped_loss, clipped_loss)
@@ -205,11 +209,13 @@ class PPO:
 
             log_loss_sum += loss.detach()
             log_clip_fraction_sum += clip_fraction.detach()
+            log_approximate_kl_sum += approximate_kl.detach()
             minibatch_count += 1
 
         metrics = {
             "train/policy_loss": log_loss_sum / minibatch_count,
             "train/policy_clip_fraction": log_clip_fraction_sum / minibatch_count,
+            "train/policy_approximate_kl": log_approximate_kl_sum / minibatch_count,
         }
         if action_bound_loss_enabled:
             metrics["train/action_bound_loss"] = log_action_bound_loss_sum / minibatch_count

@@ -3,7 +3,8 @@ from functools import partial
 from torch.optim import Adam
 
 from robot_student.algorithm import PPOConfiguration, PPOFactory
-from robot_student.model import MLP, ActionBoundEnforcement, PolicyConfiguration, ValueFunctionConfiguration
+from robot_student.model import MLP, PolicyConfiguration, ValueFunctionConfiguration
+from robot_student.model.action import ActionBoundEnforcement, PositionTargetMode
 from robot_student.model.weight_initializer import OrthogonalInitializer
 
 
@@ -17,6 +18,7 @@ def get_ppo_factory():
         observation_key="proprioception",
         action_key="control",
         action_bound_enforcement=ActionBoundEnforcement.BOUND_LOSS,
+        position_target_mode=PositionTargetMode.DEFAULT_POSE_OFFSET,
     )
 
     value_function = ValueFunctionConfiguration(

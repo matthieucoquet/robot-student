@@ -3,7 +3,8 @@ from functools import partial
 from torch.optim import Adam
 
 from robot_student.algorithm import PPOConfiguration, PPOFactory
-from robot_student.model import MLP, ActionBoundEnforcement, PolicyConfiguration, ValueFunctionConfiguration
+from robot_student.model import MLP, PolicyConfiguration, ValueFunctionConfiguration
+from robot_student.model.action import ActionBoundEnforcement
 from robot_student.model.weight_initializer import OrthogonalInitializer
 
 

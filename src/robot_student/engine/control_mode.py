@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class PositionControlSettings:
     kp: float
     kd: float
+    armature: float
     force_range: tuple[float, float]
 
 

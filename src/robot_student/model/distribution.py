@@ -1,12 +1,7 @@
-from enum import StrEnum
-
 import torch
 from torch.distributions import transforms
 
-
-class ActionBoundEnforcement(StrEnum):
-    TANH_DISTRIBUTION = "tanh_distribution"
-    BOUND_LOSS = "bound_loss"
+from robot_student.model.action import ActionBoundEnforcement
 
 
 class ActionDistribution(torch.distributions.Independent):

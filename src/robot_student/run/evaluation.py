@@ -91,7 +91,7 @@ class Evaluation:
             observation = self._environment.reset()
 
             try:
-                for _ in range(150):
+                for _ in range(450):
                     action = policy.sample_action(observation, stochastic=True)
                     _, _, terminal, truncated, _ = self._environment.step(action)
 

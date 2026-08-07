@@ -49,7 +49,7 @@ class CharacterEnvironment(Environment):
 
         self._engine.build_scene(environment_count=environment_count, env_spacing=(2.0, 2.0))
         batched_initial_pose = initial_pose_tensor.expand(environment_count, -1).contiguous()
-        self._character.set_generalized_positions(batched_initial_pose, zero_velocity=True)
+        self._character.set_default_pose(batched_initial_pose)
         self._engine.register_initial_pose()
 
         self._schema = self._compute_schema()
@@ -87,7 +87,7 @@ class CharacterEnvironment(Environment):
         return self._get_character_observation(root_state)
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        self._character.apply_action(action)
+        self._character.apply_action(action["control"].detach())
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
         normalized_control_forces = self._character.get_normalized_control_forces()
@@ -95,9 +95,10 @@ class CharacterEnvironment(Environment):
             self._engine.step()
 
         root_state = self._character.get_root_state()
-        root_position, _, root_velocity, _ = root_state
+        root_position, root_rotation, root_velocity, _ = root_state
         observation = self._get_character_observation(root_state)
-        task_step = self._task.step(root_position, root_velocity, normalized_control_forces)
+        joint_positions = self._character.get_joint_dof_positions()
+        task_step = self._task.step(root_position, root_rotation, root_velocity, joint_positions, normalized_control_forces)
 
         self._episode_step_count.add_(1)
         truncated = self._episode_step_count >= self._maximum_episode_steps
