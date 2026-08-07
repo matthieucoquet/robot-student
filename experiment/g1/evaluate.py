@@ -17,7 +17,7 @@ if __name__ == "__main__":
     evaluation = Evaluation(
         experiment_name="g1_walking",
         run_name="ppo",
-        run_id="54170519bb32e637",
+        run_id="ee3207c09b3f52f5",
         seed=0,
         use_cuda=True,
         debug_level=logging.INFO,

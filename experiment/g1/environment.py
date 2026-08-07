@@ -121,7 +121,16 @@ class G1EnvironmentFactory(EnvironmentFactory):
         )
 
         task = RunInDirectionTask(
-            device=engine.device, height_range=(0.6, 1.5), target_speed_weight=0.5, facing_direction_weight=0.5, control_cost_weight=1.0
+            device=engine.device,
+            default_joint_positions=initial_pose[7:],
+            height_range=(0.5, 1.5),
+            target_height=0.7,
+            target_speed=1.2,
+            target_speed_weight=1.5,
+            target_height_weight=0.03,
+            facing_direction_weight=0.02,
+            control_cost_weight=0.2,
+            pose_cost_weight=0.08,
         )
 
         return CharacterEnvironment(

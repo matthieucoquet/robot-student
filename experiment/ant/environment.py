@@ -32,7 +32,6 @@ class AntEnvironmentFactory(EnvironmentFactory):
         for joint in joints_name:
             joints_settings[joint] = PositionControlSettings(kp=300.0, kd=10.0, armature=1.0, force_range=(-300.0, 300.0))
         control_mode = PositionControlMode(joints=joints_settings, action_limit_scale=self.action_limit_scale)
-        task = RunInDirectionTask(device=engine.device)
         initial_pose = (
             0.0,
             0.0,
@@ -50,6 +49,7 @@ class AntEnvironmentFactory(EnvironmentFactory):
             0.0,
             1.0,
         )
+        task = RunInDirectionTask(device=engine.device, default_joint_positions=initial_pose[7:])
 
         return CharacterEnvironment(
             engine,

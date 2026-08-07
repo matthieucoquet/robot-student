@@ -1,7 +1,6 @@
 import genesis as gs
 import torch
 from genesis.engine.entities import RigidEntity
-from tensordict import TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode, PositionControlMode
 from robot_student.environment.schema import TensorSchema
@@ -71,17 +70,11 @@ class GenesisCharacter:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
     def get_action_schema(self) -> TensorSchema:
-        match self._control_mode:
-            case PositionControlMode():
-                lower_bounds, upper_bounds = self._character.get_dofs_limit(self._controlled_dof_indices)
-                lower_bounds, upper_bounds = _scale_action_limits(lower_bounds, upper_bounds, self._control_mode.action_limit_scale)
-            case _:
-                raise ValueError(f"Unsupported control mode: {self._control_mode}")
-
         return TensorSchema(
             shape=(self.n_controlled_dofs,),
             data_type=torch.float32,
-            bounds=(lower_bounds, upper_bounds),
+            bounds=(self._action_lower_bounds, self._action_upper_bounds),
+            default_value=self._default_control_positions,
         )
 
     def get_generalized_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
@@ -96,6 +89,21 @@ class GenesisCharacter:
 
     def set_generalized_positions(self, generalized_positions: torch.Tensor, zero_velocity: bool = False) -> None:
         self._character.set_qpos(generalized_positions, zero_velocity=zero_velocity)
+
+    def set_default_pose(self, default_pose: torch.Tensor) -> None:
+        self._default_pose = default_pose.detach().clone()
+        self.set_generalized_positions(self._default_pose, zero_velocity=True)
+
+        controlled_positions = self._character.get_dofs_position(dofs_idx_local=self._controlled_dof_indices)
+        if controlled_positions.ndim > 1:
+            controlled_positions = controlled_positions[0]
+        self._default_control_positions = controlled_positions.detach().clone()
+
+        lower_bounds, upper_bounds = self._character.get_dofs_limit(self._controlled_dof_indices)
+        self._action_lower_bounds, self._action_upper_bounds = _scale_action_limits(
+            lower_bounds, upper_bounds, self._control_mode.action_limit_scale
+        )
+        self._control_targets = self._default_pose.new_empty((*self._default_pose.shape[:-1], self.n_controlled_dofs))
 
     def get_control_forces(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_dofs_control_force(
@@ -114,8 +122,15 @@ class GenesisCharacter:
         angular_velocity = self._character.get_ang(envs_idx=environment_indices)
         return position, rotation, velocity, angular_velocity
 
-    def apply_action(self, action: TensorDictBase) -> None:
-        self._character.control_dofs_position(action["control"], self._controlled_dof_indices)
+    def apply_action(self, action: torch.Tensor) -> None:
+        torch.clamp(
+            action,
+            min=self._action_lower_bounds,
+            max=self._action_upper_bounds,
+            out=self._control_targets,
+        )
+
+        self._character.control_dofs_position(self._control_targets, self._controlled_dof_indices)
 
 
 def _scale_action_limits(
