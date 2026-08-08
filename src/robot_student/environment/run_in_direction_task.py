@@ -61,7 +61,7 @@ class RunInDirectionTask(CharacterTask):
         facing_direction_reward = torch.cos(heading_angle(root_rotation) - self._direction_heading)
 
         control_cost = torch.mean(normalized_control_forces.square(), dim=-1)
-        pose_cost = torch.mean((joint_positions - self._default_joint_positions).square().square(), dim=-1)
+        pose_cost = torch.mean((joint_positions - self._default_joint_positions).square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.1
         reward = (
             stay_alive_reward

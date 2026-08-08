@@ -24,6 +24,7 @@ class PPOConfiguration:
     value_function: ValueFunctionConfiguration
     policy_optimizer: OptimizerFactory
     value_function_optimizer: OptimizerFactory
+    compile_models: bool = False
     rollout_length: int = 32
     discount: float = 0.99
     td_lambda: float = 0.95
@@ -53,6 +54,10 @@ class PPO:
         device = environment.device
         self._policy = Policy(environment.schema, configuration=configuration.policy, device=device)
         self._value_function = ValueFunction(environment.schema, configuration=configuration.value_function, device=device)
+
+        if configuration.compile_models:
+            self._policy.compile()
+            self._value_function.compile()
 
         self._policy_optimizer = configuration.policy_optimizer(self._policy.parameters())
         self._value_optimizer = configuration.value_function_optimizer(self._value_function.parameters())
@@ -84,10 +89,13 @@ class PPO:
         self._observations = self._environment.reset()
 
     def update(self) -> dict[str, torch.Tensor]:
-        metrics = self._collect_rollouts()
-        metrics |= self._update_value_function()
-        metrics |= self._update_policy()
-        with torch.no_grad():
+        with torch.profiler.record_function("ppo.collect_rollouts"):
+            metrics = self._collect_rollouts()
+        with torch.profiler.record_function("ppo.update_value_function"):
+            metrics |= self._update_value_function()
+        with torch.profiler.record_function("ppo.update_policy"):
+            metrics |= self._update_policy()
+        with torch.profiler.record_function("ppo.update_normalizers"), torch.no_grad():
             observations = self._rollout_buffer.observations
             self._policy.update_normalizer(observations)
             self._value_function.update_normalizer(observations)
@@ -122,7 +130,8 @@ class PPO:
             done = torch.logical_or(terminal, truncated)
             self._observations = self._environment.reset_done(done)
 
-        self._finalize_rollouts()
+        with torch.profiler.record_function("ppo.compute_returns"):
+            self._finalize_rollouts()
         return transition_metrics | {"train/mean_reward": self._rollout_buffer.rewards.mean()}
 
     def _finalize_rollouts(self) -> None:

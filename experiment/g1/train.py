@@ -1,6 +1,6 @@
 import logging
 
-from robot_student.run import Training
+from robot_student.run import Training, ProfilingConfiguration
 from robot_student.util import WeightsAndBiasesStorage
 
 from .environment import G1EnvironmentFactory
@@ -8,9 +8,18 @@ from .learner import get_ppo_factory
 
 if __name__ == "__main__":
     environment = G1EnvironmentFactory(headless=True, environment_count=4096)
-    learner = get_ppo_factory()
+    learner = get_ppo_factory(compile_models=True)
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
+
+    # profiling = ProfilingConfiguration(
+    #     skip_first_iterations=5,
+    #     warmup_iterations=2,
+    #     active_iterations=3,
+    #     record_shapes=False,
+    #     profile_memory=False,
+    #     with_stack=True,
+    # )
 
     training = Training(
         experiment_name="g1_walking",
@@ -24,5 +33,6 @@ if __name__ == "__main__":
         environment_factory=environment,
         learner_factory=learner,
         run_storage=weights_and_biases_storage,
+        profiling=None,
     )
     training.run()

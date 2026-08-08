@@ -8,7 +8,7 @@ from robot_student.model.action import ActionBoundEnforcement, PositionTargetMod
 from robot_student.model.weight_initializer import OrthogonalInitializer
 
 
-def get_ppo_factory():
+def get_ppo_factory(*, compile_models: bool = False):
     policy = PolicyConfiguration(
         body_factory=partial(
             MLP,
@@ -40,6 +40,7 @@ def get_ppo_factory():
             value_function=value_function,
             policy_optimizer=policy_optimizer,
             value_function_optimizer=value_optimizer,
+            compile_models=compile_models,
             rollout_length=32,
         )
     )
