@@ -4,7 +4,7 @@ import genesis as gs
 import torch
 
 from robot_student.engine.control_mode import ControlMode
-from robot_student.engine.genesis_character import GenesisCharacter
+from robot_student.engine.physics_character import PhysicsCharacter
 
 
 class GenesisEngine:
@@ -32,9 +32,9 @@ class GenesisEngine:
     def device(self) -> torch.device:
         return gs.device
 
-    def add_physics_character(self, xml_path: Path, control_mode: ControlMode) -> "GenesisCharacter":
+    def add_physics_character(self, xml_path: Path, control_mode: ControlMode) -> "PhysicsCharacter":
         character = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
-        genesis_character = GenesisCharacter(character, control_mode=control_mode)
+        genesis_character = PhysicsCharacter(character, control_mode=control_mode)
         self.physics_characters.append(genesis_character)
 
         if self._recording_camera is not None:

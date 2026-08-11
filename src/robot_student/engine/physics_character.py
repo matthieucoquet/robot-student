@@ -5,10 +5,12 @@ from genesis.engine.entities import RigidEntity
 from robot_student.engine.control_mode import ControlMode, PositionControlMode
 from robot_student.environment.schema import TensorSchema
 
+from .kinematic_character import KinematicCharacter
 
-class GenesisCharacter:
+
+class PhysicsCharacter(KinematicCharacter):
     def __init__(self, character: RigidEntity, control_mode: ControlMode) -> None:
-        self._character: RigidEntity = character
+        super().__init__(character)
         self._control_mode = control_mode
         self._setup_controlled_joints()
         self.n_qs = self._character.n_qs
@@ -77,18 +79,9 @@ class GenesisCharacter:
             default_value=self._default_control_positions,
         )
 
-    def get_generalized_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
-        return self._character.get_qpos(envs_idx=environment_indices)
-
-    def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
-        return self._character.get_dofs_velocity(envs_idx=environment_indices)
-
     def get_joint_dof_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         positions = self._character.get_dofs_position(envs_idx=environment_indices)
         return positions[..., self.n_root_dofs :]
-
-    def set_generalized_positions(self, generalized_positions: torch.Tensor, zero_velocity: bool = False) -> None:
-        self._character.set_qpos(generalized_positions, zero_velocity=zero_velocity)
 
     def set_default_pose(self, default_pose: torch.Tensor) -> None:
         self._default_pose = default_pose.detach().clone()

@@ -42,8 +42,8 @@ class MotionPreprocess:
 
         for motion in self._motions:
             for i in range(motion.frame_count):
-                # Process each frame of the motion
-                pass
+                generalized_positions = motion.get_generalized_positions(i)
+                self._character.set_generalized_positions(generalized_positions, zero_velocity=True)
 
     def _read_all_motions(self):
         for file_path in sorted(self.motion_folder.glob("*.csv")):

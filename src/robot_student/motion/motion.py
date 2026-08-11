@@ -16,3 +16,13 @@ class Motion(TensorClass):
     @property
     def frame_count(self) -> int:
         return len(self)
+
+    def get_generalized_positions(self, index) -> torch.Tensor:
+        return torch.cat(
+            [
+                self.root_position[index],
+                self.root_rotation[index],
+                self.joint_dof[index],
+            ],
+            dim=-1,
+        )
