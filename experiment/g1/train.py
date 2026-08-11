@@ -1,9 +1,9 @@
 import logging
 
-from robot_student.run import Training, ProfilingConfiguration
+from robot_student.run import Training
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment import G1EnvironmentFactory
+from .environment.environment import G1EnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":

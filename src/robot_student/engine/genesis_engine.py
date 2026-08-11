@@ -26,16 +26,16 @@ class GenesisEngine:
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
         )
         self._recording_camera = None
-        self.characters = []
+        self.physics_characters = []
 
     @property
     def device(self) -> torch.device:
         return gs.device
 
-    def add_character(self, xml_path: Path, control_mode: ControlMode) -> "GenesisCharacter":
+    def add_physics_character(self, xml_path: Path, control_mode: ControlMode) -> "GenesisCharacter":
         character = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
         genesis_character = GenesisCharacter(character, control_mode=control_mode)
-        self.characters.append(genesis_character)
+        self.physics_characters.append(genesis_character)
 
         if self._recording_camera is not None:
             self._recording_camera.follow_entity(
@@ -45,6 +45,12 @@ class GenesisEngine:
             )
 
         return genesis_character
+
+    def add_kinematic_character(self, xml_path: Path):
+        return self._scene.add_entity(
+            gs.morphs.MJCF(file=str(xml_path)),
+            material=gs.materials.Kinematic(),
+        )
 
     def add_ground_plane(self) -> None:
         self._scene.add_entity(gs.morphs.Plane())
@@ -85,7 +91,7 @@ class GenesisEngine:
 
     def build_scene(self, environment_count: int = 1, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
         self._scene.build(n_envs=environment_count, env_spacing=env_spacing)
-        for character in self.characters:
+        for character in self.physics_characters:
             character.configure_control_mode()
 
     def step(self) -> None:

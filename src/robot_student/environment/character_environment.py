@@ -35,7 +35,7 @@ class CharacterEnvironment(Environment):
         self._task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
         self._engine.add_ground_plane()
-        self._character = engine.add_character(xml_path, control_mode=control_mode)
+        self._character = engine.add_physics_character(xml_path, control_mode=control_mode)
 
         device = engine.device
         initial_pose_tensor = torch.tensor(
