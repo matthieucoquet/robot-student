@@ -1,4 +1,5 @@
 from .evaluation import Evaluation, RecordingConfiguration
+from .motion_preprocess import MotionPreprocess
 from .training import ProfilingConfiguration, Training
 
 __all__ = [
@@ -6,4 +7,5 @@ __all__ = [
     "ProfilingConfiguration",
     "Evaluation",
     "RecordingConfiguration",
+    "MotionPreprocess",
 ]

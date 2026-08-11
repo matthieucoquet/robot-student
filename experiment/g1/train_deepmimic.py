@@ -1,13 +1,13 @@
 import logging
 
-from robot_student.run import Training, ProfilingConfiguration
+from robot_student.run import Training
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment import G1EnvironmentFactory
+from .environment.environment import TrackerEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = G1EnvironmentFactory(headless=True, environment_count=4096)
+    environment = TrackerEnvironmentFactory(headless=True, environment_count=4096)
     learner = get_ppo_factory(compile_models=True)
 
     weights_and_biases_storage = WeightsAndBiasesStorage()

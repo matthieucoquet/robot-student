@@ -1,2 +1,10 @@
-* Add g1 parameters that are missing
-* Simplify setup of training so we don't have to copy paste too much code between experiments
+* DeepMimic
+    * Reset -> OK
+    * Reset some -> OK
+    * Observation -> OK missing key bodies
+    * Actions -> nothing to do compared to ppo I guess?
+    * Reward
+    * Termination
+
+    * Key pose:
+        in obs character and target

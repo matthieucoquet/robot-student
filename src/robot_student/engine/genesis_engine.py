@@ -4,7 +4,8 @@ import genesis as gs
 import torch
 
 from robot_student.engine.control_mode import ControlMode
-from robot_student.engine.genesis_character import GenesisCharacter
+from robot_student.engine.kinematic_robot import KinematicRobot
+from robot_student.engine.robot import Robot
 
 
 class GenesisEngine:
@@ -20,31 +21,39 @@ class GenesisEngine:
         gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
 
         self.simulation_frequency = simulation_frequency
+        self.time_step = 1.0 / simulation_frequency
         self._scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=1.0 / simulation_frequency),
+            sim_options=gs.options.SimOptions(dt=self.time_step),
             show_viewer=show_viewer,
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
         )
         self._recording_camera = None
-        self.characters = []
+        self.robots = []
 
     @property
     def device(self) -> torch.device:
         return gs.device
 
-    def add_character(self, xml_path: Path, control_mode: ControlMode) -> "GenesisCharacter":
-        character = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
-        genesis_character = GenesisCharacter(character, control_mode=control_mode)
-        self.characters.append(genesis_character)
+    def add_robot(self, xml_path: Path, control_mode: ControlMode) -> Robot:
+        entity = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
+        robot = Robot(entity, control_mode=control_mode)
+        self.robots.append(robot)
 
         if self._recording_camera is not None:
             self._recording_camera.follow_entity(
-                character,
+                robot,
                 smoothing=0.05,
                 fix_orientation=False,
             )
 
-        return genesis_character
+        return robot
+
+    def add_kinematic_robot(self, xml_path: Path) -> KinematicRobot:
+        entity = self._scene.add_entity(
+            gs.morphs.MJCF(file=str(xml_path)),
+            material=gs.materials.Rigid(),  # TODO: switch and retry kinematic
+        )
+        return KinematicRobot(entity)
 
     def add_ground_plane(self) -> None:
         self._scene.add_entity(gs.morphs.Plane())
@@ -85,8 +94,8 @@ class GenesisEngine:
 
     def build_scene(self, environment_count: int = 1, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
         self._scene.build(n_envs=environment_count, env_spacing=env_spacing)
-        for character in self.characters:
-            character.configure_control_mode()
+        for robot in self.robots:
+            robot.configure_control_mode()
 
     def step(self) -> None:
         self._scene.step()
