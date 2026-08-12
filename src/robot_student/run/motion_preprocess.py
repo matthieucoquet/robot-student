@@ -17,7 +17,9 @@ ROOT_ROTATION_COLUMNS = ("root_rot_w", "root_rot_x", "root_rot_y", "root_rot_z")
 class MotionPreprocess:
     robot_path: Path
     motion_folder: Path
+    output_folder: Path
     debug_level: int = logging.DEBUG
+    headless: bool = True
     use_cuda: bool = False
     seed: int = 0
     simulation_frequency: int = 120
@@ -37,19 +39,32 @@ class MotionPreprocess:
         self._motions = []
 
     def run(self):
+        self.output_folder.mkdir(parents=True, exist_ok=True)
         self._setup_scene()
         self._read_all_motions()
 
-        for motion in self._motions:
+        # TODO batch is with several frame of the motion at the same time
+        for source_path, motion in self._motions:
+            link_positions = self._character.get_links_position(relative=False)[0]
+            link_rotations = self._character.get_links_rotation(relative=False)[0]
+            motion.link_positions = link_positions.new_empty((motion.frame_count, *link_positions.shape))
+            motion.link_rotations = link_rotations.new_empty((motion.frame_count, *link_rotations.shape))
+
             for i in range(motion.frame_count):
                 generalized_positions = motion.get_generalized_positions(i)
                 self._character.set_generalized_positions(generalized_positions, zero_velocity=True)
+
+                motion.link_positions[i].copy_(self._character.get_links_position(relative=False)[0])
+                motion.link_rotations[i].copy_(self._character.get_links_rotation(relative=False)[0])
+
+            output_path = self.output_folder / source_path.with_suffix(".pt").name
+            torch.save(motion.cpu(), output_path)
 
     def _read_all_motions(self):
         for file_path in sorted(self.motion_folder.glob("*.csv")):
             if file_path.is_file():
                 motion = self._read_csv(file_path)
-                self._motions.append(motion)
+                self._motions.append((file_path, motion))
 
     @staticmethod
     def _read_csv(file_path: Path) -> Motion:

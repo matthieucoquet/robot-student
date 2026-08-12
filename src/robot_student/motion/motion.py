@@ -2,7 +2,7 @@ import torch
 from tensordict import TensorClass
 
 
-class Motion(TensorClass):
+class Motion(TensorClass["autocast"]):
     frequency: int
 
     root_position: torch.Tensor

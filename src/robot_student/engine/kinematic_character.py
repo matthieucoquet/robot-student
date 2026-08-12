@@ -1,4 +1,3 @@
-import genesis as gs
 import torch
 from genesis.engine.entities import KinematicEntity
 
@@ -12,6 +11,12 @@ class KinematicCharacter:
 
     def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._character.get_dofs_velocity(envs_idx=environment_indices)
+
+    def get_links_position(self, environment_indices: torch.Tensor | None = None, relative: bool = False) -> torch.Tensor:
+        return self._character.get_links_pos(envs_idx=environment_indices, relative=relative)
+
+    def get_links_rotation(self, environment_indices: torch.Tensor | None = None, relative: bool = False) -> torch.Tensor:
+        return self._character.get_links_quat(envs_idx=environment_indices, relative=relative)
 
     def set_generalized_positions(self, generalized_positions: torch.Tensor, zero_velocity: bool = False) -> None:
         self._character.set_qpos(generalized_positions, zero_velocity=zero_velocity)

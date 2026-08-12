@@ -4,6 +4,7 @@ import genesis as gs
 import torch
 
 from robot_student.engine.control_mode import ControlMode
+from robot_student.engine.kinematic_character import KinematicCharacter
 from robot_student.engine.physics_character import PhysicsCharacter
 
 
@@ -46,11 +47,12 @@ class GenesisEngine:
 
         return genesis_character
 
-    def add_kinematic_character(self, xml_path: Path):
-        return self._scene.add_entity(
+    def add_kinematic_character(self, xml_path: Path) -> KinematicCharacter:
+        character = self._scene.add_entity(
             gs.morphs.MJCF(file=str(xml_path)),
-            material=gs.materials.Kinematic(),
+            material=gs.materials.Rigid(),  # TODO: switch and retry kinematic
         )
+        return KinematicCharacter(character)
 
     def add_ground_plane(self) -> None:
         self._scene.add_entity(gs.morphs.Plane())
