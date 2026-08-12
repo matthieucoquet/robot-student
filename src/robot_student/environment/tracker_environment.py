@@ -1,10 +1,11 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tensordict import TensorDict, TensorDictBase
+from tensordict import TensorDictBase
 
-
+from robot_student.engine.control_mode import ControlMode
 from robot_student.environment.environment import Environment
+from robot_student.motion.motion_library import MotionLibrary
 
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
@@ -14,6 +15,7 @@ class TrackerEnvironment(Environment):
     def __init__(
         self,
         engine: "GenesisEngine",
+        motion_library: MotionLibrary,
         xml_path: Path,
         environment_count: int,
         control_mode: ControlMode,
@@ -21,6 +23,7 @@ class TrackerEnvironment(Environment):
     ) -> None:
         self._count = environment_count
         self._engine = engine
+        self._motion_library = motion_library
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
         self._engine.add_ground_plane()
         self._character = engine.add_physics_character(xml_path, control_mode=control_mode)

@@ -1,15 +1,17 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
-from robot_student.environment import CharacterEnvironment, RunInDirectionTask
+from robot_student.environment import CharacterEnvironment, RunInDirectionTask, TrackerEnvironment
 from robot_student.environment.environment import Environment
+from robot_student.motion import MotionLibrary
 from robot_student.run.environment_factory import EnvironmentFactory
 
 from .robot import g1_configuration
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class G1EnvironmentFactory(EnvironmentFactory):
+class PPOEnvironmentFactory(EnvironmentFactory):
     is_29_dof: bool = True
 
     def create_environment(
@@ -39,4 +41,28 @@ class G1EnvironmentFactory(EnvironmentFactory):
             task=task,
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
+        )
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class TrackerEnvironmentFactory(EnvironmentFactory):
+    is_29_dof: bool = True
+
+    def create_environment(
+        self,
+        engine: GenesisEngine,
+    ) -> Environment:
+        mjcf_path, control_mode, initial_pose, initial_joint_positions = g1_configuration(self.is_29_dof)
+
+        motion = [Path(__file__).parent / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"]
+
+        motion_library = MotionLibrary(motion)
+
+        return TrackerEnvironment(
+            engine,
+            motion_library=motion_library,
+            xml_path=mjcf_path,
+            environment_count=self.environment_count,
+            control_mode=control_mode,
+            control_frequency=self.control_frequency,
         )

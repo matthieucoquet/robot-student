@@ -28,6 +28,18 @@ def quat_to_rot6d(rotation: torch.Tensor) -> torch.Tensor:
     )
 
 
+def quat_to_rotation_vector(rotation: torch.Tensor) -> torch.Tensor:
+    scalar = rotation[..., :1]
+    vector = rotation[..., 1:]
+    vector_norm = torch.linalg.vector_norm(vector, dim=-1, keepdim=True)
+    angle = 2 * torch.atan2(vector_norm, scalar.abs())
+
+    epsilon = torch.finfo(rotation.dtype).eps
+    scale = torch.where(vector_norm > epsilon, angle / vector_norm.clamp_min(epsilon), 2.0)
+    shortest_path_sign = torch.where(scalar < 0, -1.0, 1.0)
+    return shortest_path_sign * scale * vector
+
+
 def heading_angle(rotation: torch.Tensor) -> torch.Tensor:
     forward = torch.tensor((1, 0, 0), device=rotation.device, dtype=rotation.dtype)
     transformed_forward = _tc_transform_by_quat(forward, rotation)

@@ -52,7 +52,9 @@ class MotionPreprocess:
 
             for i in range(motion.frame_count):
                 generalized_positions = motion.get_generalized_positions(i)
+
                 self._character.set_generalized_positions(generalized_positions, zero_velocity=True)
+                self._character.set_velocities()
 
                 motion.link_positions[i].copy_(self._character.get_links_position(relative=False)[0])
                 motion.link_rotations[i].copy_(self._character.get_links_rotation(relative=False)[0])
@@ -64,6 +66,7 @@ class MotionPreprocess:
         for file_path in sorted(self.motion_folder.glob("*.csv")):
             if file_path.is_file():
                 motion = self._read_csv(file_path)
+                motion.compute_velocities()
                 self._motions.append((file_path, motion))
 
     @staticmethod
@@ -92,7 +95,7 @@ class MotionPreprocess:
             "frequency": 120,
             "root_position": torch.stack([column_tensors[column_name] for column_name in ROOT_POSITION_COLUMNS], dim=-1),
             "root_rotation": torch.stack([column_tensors[column_name] for column_name in ROOT_ROTATION_COLUMNS], dim=-1),
-            "joint_dof": torch.stack([column_tensors[column_name] for column_name in joint_dof_columns], dim=-1),
+            "joint_dof_position": torch.stack([column_tensors[column_name] for column_name in joint_dof_columns], dim=-1),
         }
         batch_size = data["root_position"].shape[:-1]
         return Motion(**data, batch_size=batch_size)
