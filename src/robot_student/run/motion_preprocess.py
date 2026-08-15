@@ -34,7 +34,7 @@ class MotionPreprocess:
             simulation_frequency=self.simulation_frequency,
         )
         self._engine.add_ground_plane()
-        self._character = self._engine.add_kinematic_character(self.robot_path)
+        self._kinematic_robot = self._engine.add_kinematic_robot(self.robot_path)
         self._engine.build_scene(environment_count=1, env_spacing=(1.0, 1.0))
         self._motions = []
 
@@ -45,19 +45,20 @@ class MotionPreprocess:
 
         # TODO batch is with several frame of the motion at the same time
         for source_path, motion in self._motions:
-            link_positions = self._character.get_links_position(relative=False)[0]
-            link_rotations = self._character.get_links_rotation(relative=False)[0]
+            link_positions = self._kinematic_robot.get_links_position(relative=False)[0]
+            link_rotations = self._kinematic_robot.get_links_rotation(relative=False)[0]
             motion.link_positions = link_positions.new_empty((motion.frame_count, *link_positions.shape))
             motion.link_rotations = link_rotations.new_empty((motion.frame_count, *link_rotations.shape))
 
             for i in range(motion.frame_count):
-                generalized_positions = motion.get_generalized_positions(i)
+                positions, velocities = motion.get_generalized_state(i)
 
-                self._character.set_generalized_positions(generalized_positions, zero_velocity=True)
-                self._character.set_velocities()
+                self._kinematic_robot.set_generalized_state(positions, velocities)
 
-                motion.link_positions[i].copy_(self._character.get_links_position(relative=False)[0])
-                motion.link_rotations[i].copy_(self._character.get_links_rotation(relative=False)[0])
+                motion.link_positions[i].copy_(self._kinematic_robot.get_links_position(relative=False)[0])
+                motion.link_rotations[i].copy_(self._kinematic_robot.get_links_rotation(relative=False)[0])
+                # motion.link_velocities[i].copy_(self._kinematic_robot.get_links_velocity()[0])
+                # motion.link_angular_velocity[i].copy_(self._kinematic_robot.get_links_angular_velocity()[0])
 
             output_path = self.output_folder / source_path.with_suffix(".pt").name
             torch.save(motion.cpu(), output_path)

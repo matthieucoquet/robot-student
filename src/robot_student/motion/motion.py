@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import torch
 from genesis.utils.geom import inv_quat, transform_quat_by_quat
 from tensordict import TensorClass
@@ -8,6 +10,18 @@ from robot_student.util.geometry import quat_to_rotation_vector
 def _angular_displacement(from_rotation: torch.Tensor, to_rotation: torch.Tensor) -> torch.Tensor:
     relative_rotation = transform_quat_by_quat(inv_quat(from_rotation), to_rotation)
     return quat_to_rotation_vector(relative_rotation)
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class MotionState:
+    root_position: torch.Tensor
+    root_rotation: torch.Tensor
+    joint_dof_position: torch.Tensor
+    root_velocity: torch.Tensor
+    root_angular_velocity: torch.Tensor
+    joint_dof_velocities: torch.Tensor
+    link_positions: torch.Tensor
+    link_rotations: torch.Tensor
 
 
 class Motion(TensorClass["autocast"]):
@@ -21,27 +35,36 @@ class Motion(TensorClass["autocast"]):
     root_angular_velocity: torch.Tensor | None = None
 
     joint_dof_velocities: torch.Tensor | None = None
-    joint_rotation: torch.Tensor | None = None
+    # joint_rotation: torch.Tensor | None = None
 
     # Computed later by FK
     link_positions: torch.Tensor | None = None
     link_rotations: torch.Tensor | None = None
-    link_velocities: torch.Tensor | None = None
-    link_angular_velocity: torch.Tensor | None = None
+    # link_velocities: torch.Tensor | None = None
+    # link_angular_velocity: torch.Tensor | None = None
 
     @property
     def frame_count(self) -> int:
         return len(self)
 
-    def get_generalized_positions(self, index) -> torch.Tensor:
-        return torch.cat(
+    def get_generalized_state(self, index) -> torch.Tensor:
+        positions = torch.cat(
             [
                 self.root_position[index],
                 self.root_rotation[index],
-                self.joint_dof[index],
+                self.joint_dof_position[index],
             ],
             dim=-1,
         )
+        velocities = torch.cat(
+            [
+                self.root_velocity[index],
+                self.root_angular_velocity[index],
+                self.joint_dof_velocities[index],
+            ],
+            dim=-1,
+        )
+        return positions, velocities
 
     @torch.no_grad()
     def compute_velocities(self) -> None:
@@ -65,5 +88,3 @@ class Motion(TensorClass["autocast"]):
         self.joint_dof_velocities[1:-1].copy_((self.joint_dof_position[2:] - self.joint_dof_position[:-2]) * (0.5 * self.frequency))
         self.joint_dof_velocities[0].copy_((self.joint_dof_position[1] - self.joint_dof_position[0]) * self.frequency)
         self.joint_dof_velocities[-1].copy_((self.joint_dof_position[-1] - self.joint_dof_position[-2]) * self.frequency)
-
-        # TODO check joint_rotation

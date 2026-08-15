@@ -5,10 +5,10 @@ from genesis.engine.entities import RigidEntity
 from robot_student.engine.control_mode import ControlMode, PositionControlMode
 from robot_student.environment.schema import TensorSchema
 
-from .kinematic_character import KinematicCharacter
+from .base_robot import BaseRobot
 
 
-class PhysicsCharacter(KinematicCharacter):
+class Robot(BaseRobot):
     def __init__(self, character: RigidEntity, control_mode: ControlMode) -> None:
         super().__init__(character)
         self._control_mode = control_mode
