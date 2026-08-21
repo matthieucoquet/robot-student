@@ -128,8 +128,7 @@ class CharacterEnvironment(Environment):
     def _get_character_observation(self, root_state: RootState) -> TensorDictBase:
         root_position, root_rotation, root_velocity, root_angular_velocity = root_state
         joint_positions = self._robot.get_joint_dof_positions()
-        generalized_velocities = self._robot.get_generalized_velocities()
-        joint_velocities = generalized_velocities[..., self._robot.n_root_dofs :]
+        joint_velocities = self._robot.get_joint_dof_velocities()
 
         root_height = root_position[..., 2:3]
         if self._global_observation:

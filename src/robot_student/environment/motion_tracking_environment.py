@@ -8,7 +8,7 @@ from tensordict import TensorDict, TensorDictBase
 from robot_student.engine import ControlMode, ReferenceRobot
 from robot_student.environment.environment import CharacterEnvironment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
-from robot_student.motion.motion_library import MotionLibrary
+from robot_student.motion import MotionLibrary, ReferenceRobot
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d
 
 if TYPE_CHECKING:
@@ -31,14 +31,9 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         maximum_episode_steps: int = 1_000,
     ) -> None:
 
-        self._motion_library = motion_library
-        self._motion_ids = torch.empty(environment_count, dtype=torch.int64, device=engine.device)
-        self._motion_times = torch.empty(environment_count, dtype=torch.float32, device=engine.device)
-
-        self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=engine.device)
-
-        self._reference_robot = ReferenceRobot(motion_library)
-
+        # self._motion_library = motion_library
+        self._reference_robot = ReferenceRobot(motion_library, environment_count, engine.device)
+        # self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=engine.device)
 
         super().__init__(
             engine,
@@ -73,50 +68,23 @@ class MotionTrackingEnvironment(CharacterEnvironment):
 
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
-        self._reset_characters()
+        reset_state = self._reset_characters()
         root_state = self._robot.get_root_state()
         return self._get_character_observation(root_state)
 
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
         self._episode_step_count.masked_fill_(done, 0)
         environment_indices = done.reshape(-1).nonzero().reshape(-1)
-        self._reset_characters(environment_indices)
+
+        if environment_indices.numel() == 0:
+            return
+
+        self._engine.reset(environment_indices=environment_indices)  # Probably not needed to call genesis reset?
+
+        reset_state = self._reference_robot.reset(environment_indices)
 
         root_state = self._robot.get_root_state()
         return self._get_character_observation(root_state)
-
-    def _reset_characters(self, environment_indices: torch.Tensor | None = None) -> None:
-        reset_count = self._count if environment_indices is None else environment_indices.numel()
-        if reset_count == 0:
-            return
-        self._engine.reset(environment_indices=environment_indices)  # Probably not needed to call genesis reset?
-
-        sampled_motion_ids, sampled_motion_times = self._motion_library.sample(reset_count)
-        if environment_indices is None:
-            self._motion_ids.copy_(sampled_motion_ids)
-            self._motion_times.copy_(sampled_motion_times)
-        else:
-            self._motion_ids[environment_indices] = sampled_motion_ids
-            self._motion_times[environment_indices] = sampled_motion_times
-
-        state = self._motion_library.get_state(sampled_motion_ids, sampled_motion_times)
-        define the state?
-        same class for motion and physics/kinematic character?
-        self._robot.set_state(state, environment_indices=environment_indices)
-        # generalized_positions = torch.cat(
-        #     (frame.root_position, frame.root_rotation, frame.joint_dof_position),
-        #     dim=-1,
-        # )
-        # generalized_velocities = torch.cat(
-        #     (frame.root_velocity, frame.root_angular_velocity, frame.joint_dof_velocities),
-        #     dim=-1,
-        # )
-        # self._robot.set_generalized_state(
-        #     generalized_positions,
-        #     generalized_velocities,
-        #     environment_indices=environment_indices,
-        # )
-
 
     # def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     #     self._robot.apply_action(action["control"].detach())

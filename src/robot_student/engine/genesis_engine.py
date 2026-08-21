@@ -3,8 +3,8 @@ from pathlib import Path
 import genesis as gs
 import torch
 
-from robot_student.engine.base_robot import BaseRobot
 from robot_student.engine.control_mode import ControlMode
+from robot_student.engine.kinematic_robot import KinematicRobot
 from robot_student.engine.robot import Robot
 
 
@@ -48,12 +48,12 @@ class GenesisEngine:
 
         return robot
 
-    def add_kinematic_robot(self, xml_path: Path) -> BaseRobot:
+    def add_kinematic_robot(self, xml_path: Path) -> KinematicRobot:
         entity = self._scene.add_entity(
             gs.morphs.MJCF(file=str(xml_path)),
             material=gs.materials.Rigid(),  # TODO: switch and retry kinematic
         )
-        return BaseRobot(entity)
+        return KinematicRobot(entity)
 
     def add_ground_plane(self) -> None:
         self._scene.add_entity(gs.morphs.Plane())
