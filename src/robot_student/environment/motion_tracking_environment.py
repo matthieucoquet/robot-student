@@ -39,7 +39,7 @@ class DeepMimicTask(CharacterTask):
 
         key_link_positions = state.link_positions.index_select(-2, self._key_link_indices)
         reference_key_link_positions = reference.link_positions.index_select(-2, self._key_link_indices)
-        key_link_positions -= - state.root_position.unsqueeze(-2)
+        key_link_positions -= -state.root_position.unsqueeze(-2)
         reference_key_link_positions -= reference.root_position.unsqueeze(-2)
 
         root_position_difference = state.root_position - reference.root_position
@@ -62,9 +62,8 @@ class DeepMimicTask(CharacterTask):
         link_differences = state.link_positions - reference.link_positions
         link_distances = torch.sum(link_differences.square(), dim=-1)
         link_distances = torch.max(link_distances, dim=-1)[0]
-        fail = fail > 1.0
 
-        return fail
+        return link_distances > 1.0
 
     def step(
         self,
@@ -72,10 +71,7 @@ class DeepMimicTask(CharacterTask):
         reference: RobotState,
         **_,
     ) -> CharacterTaskStep:
-        reward = self.compute_reward(
-            state,
-            reference
-        )
+        reward = self.compute_reward(state, reference)
         terminal = self.compute_terminal(state, reference)
         return CharacterTaskStep(reward=reward, terminal=terminal, transition_metrics={})
 
@@ -167,10 +163,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
 
         observation = self._get_observation()
         reference_state = self._reference_robot.get_state(self._episode_step_count)
-        task_step = self._task.step(
-            self._state,
-            reference=reference_state
-        )
+        task_step = self._task.step(self._state, reference=reference_state)
 
         truncated = self._episode_step_count >= self._maximum_episode_steps
 

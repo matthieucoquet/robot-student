@@ -34,7 +34,6 @@ class ReferenceRobot:
         motion_times = self._motion_times + episode_step_count * self._timestep
         return self._motion_library.get_state(self._motion_ids, motion_times)
 
-
     def get_target_states(self, episode_step_count, target_steps):
         motion_times = self._motion_times + episode_step_count * self._timestep
         motion_times = motion_times[:, None] + target_steps * self._timestep
