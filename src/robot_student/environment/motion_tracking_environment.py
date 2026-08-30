@@ -23,11 +23,13 @@ class DeepMimicTask(CharacterTask):
         super().__init__()
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
 
+    def set_key_link_indices(self, key_link_indices):
+        self._key_link_indices = key_link_indices
+
     def compute_reward(
         self,
         state: RobotState,
         reference: RobotState,
-        global_observation: bool,
     ) -> torch.Tensor:
         position_difference = state.joint_dof_positions - reference.joint_dof_positions
         position_error = torch.sum(self._joint_reward_weight * position_difference.square(), dim=-1)
@@ -39,7 +41,7 @@ class DeepMimicTask(CharacterTask):
 
         key_link_positions = state.world_link_positions.index_select(-2, self._key_link_indices)
         reference_key_link_positions = reference.world_link_positions.index_select(-2, self._key_link_indices)
-        key_link_positions -= -state.root_position.unsqueeze(-2)
+        key_link_positions -= state.root_position.unsqueeze(-2)
         reference_key_link_positions -= reference.root_position.unsqueeze(-2)
 
         root_position_difference = state.root_position - reference.root_position
@@ -86,12 +88,12 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         control_mode: ControlMode,
         task: CharacterTask,
         control_frequency: int,
+        initial_pose: Sequence[float],
         key_link_names: Sequence[str],
         target_steps: list,
         maximum_episode_steps: int = 1_000,
     ) -> None:
 
-        # self._motion_library = motion_library
         control_timestep = 1 / control_frequency
         self._reference_robot = ReferenceRobot(environment_count, motion_library, control_timestep, engine.device)
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=engine.device)
@@ -103,10 +105,11 @@ class MotionTrackingEnvironment(CharacterEnvironment):
             control_mode,
             task,
             control_frequency,
-            initial_pose=None,
+            initial_pose=initial_pose,
             key_link_names=key_link_names,
             maximum_episode_steps=maximum_episode_steps,
         )
+        self._task.set_key_link_indices(self._key_link_indices)
 
     def _compute_schema(self) -> EnvironmentSchema:
         observation_type = torch.float32
@@ -140,14 +143,12 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         self._episode_step_count.masked_fill_(done, 0)
         environment_indices = done.reshape(-1).nonzero().reshape(-1)
 
-        if environment_indices.numel() == 0:
-            return
+        if environment_indices.numel() > 0:
+            # self._engine.reset(environment_indices=environment_indices)  # Probably not needed to call genesis reset?
+            reference_state = self._reference_robot.reset(environment_indices)
+            reset_state = self._robot.set_state(reference_state, environment_indices=environment_indices)
+            self._state.copy_environments_(environment_indices, reset_state)
 
-        self._engine.reset(environment_indices=environment_indices)  # Probably not needed to call genesis reset?
-
-        reference_state = self._reference_robot.reset(environment_indices)
-        reset_state = self._robot.set_state(reference_state, environment_indices=environment_indices)
-        self._state.copy_environments_(environment_indices, reset_state)
         return self._get_observation()
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
@@ -159,12 +160,13 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         self._episode_step_count.add_(1)
 
         observation = self._get_observation()
-        reference_state = self._reference_robot.get_state(self._episode_step_count)
+        reference_state, motion_finished = self._reference_robot.get_state(self._episode_step_count)
         task_step = self._task.step(self._state, reference=reference_state)
 
+        terminal = torch.logical_or(task_step.terminal, motion_finished)
         truncated = self._episode_step_count >= self._maximum_episode_steps
 
-        return observation, task_step.reward, task_step.terminal, truncated, task_step.transition_metrics
+        return observation, task_step.reward, terminal, truncated, task_step.transition_metrics
 
     def _get_observation(self) -> TensorDictBase:
         observation = self._get_character_observation()

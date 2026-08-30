@@ -8,24 +8,23 @@ from robot_student.motion.motion_clip import MotionClip
 
 
 class MotionLibrary:
-    def __init__(self, motion_paths: list[Path]) -> None:
+    def __init__(self, motion_paths: list[Path], device: torch.device | str) -> None:
         if not motion_paths:
             raise ValueError("At least one motion path is required")
 
         motions: list[MotionClip] = []
 
         for motion_path in motion_paths:
-            motion_clip = torch.load(motion_path, weights_only=False)
+            motion_clip = torch.load(motion_path, map_location=device, weights_only=False)
             if not isinstance(motion_clip, MotionClip):
                 raise TypeError(f"Expected a MotionClip in {motion_path}, got {type(motion_clip).__name__}")
             motions.append(motion_clip)
 
-        frame_device = motions[0].frames.root_position.device
-        self.frame_counts = torch.tensor([motion_clip.frame_count for motion_clip in motions], dtype=torch.int64, device=frame_device)
+        self.frame_counts = torch.tensor([motion_clip.frame_count for motion_clip in motions], dtype=torch.int64, device=device)
         self.frame_starts = self.frame_counts.cumsum(dim=0) - self.frame_counts
         self.motion_weights = self.frame_counts.to(torch.float32)  # Weighting by motion length for now
         self.motion_durations = torch.tensor(
-            [motion_clip.frame_count / motion_clip.frequency for motion_clip in motions], dtype=torch.float32, device=frame_device
+            [(motion_clip.frame_count - 1) / motion_clip.frequency for motion_clip in motions], dtype=torch.float32, device=device
         )
         self.frames = torch.cat([motion_clip.frames for motion_clip in motions], dim=0)
 

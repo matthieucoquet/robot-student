@@ -3,11 +3,11 @@ import logging
 from robot_student.run import Evaluation, RecordingConfiguration
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment.environment import G1EnvironmentFactory
+from .environment.environment import PPOEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = G1EnvironmentFactory(headless=False, environment_count=16)
+    environment = PPOEnvironmentFactory(headless=False, environment_count=16)
     learner = get_ppo_factory()
 
     weights_and_biases_storage = WeightsAndBiasesStorage()

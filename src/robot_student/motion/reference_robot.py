@@ -30,9 +30,10 @@ class ReferenceRobot:
 
         return self._motion_library.get_state(sampled_motion_ids, sampled_motion_times)
 
-    def get_state(self, episode_step_count):
+    def get_state(self, episode_step_count: torch.Tensor) -> tuple[RobotState, torch.Tensor]:
         motion_times = self._motion_times + episode_step_count * self._timestep
-        return self._motion_library.get_state(self._motion_ids, motion_times)
+        motion_finished = motion_times >= self._motion_library.motion_durations[self._motion_ids]
+        return self._motion_library.get_state(self._motion_ids, motion_times), motion_finished
 
     def get_target_states(self, episode_step_count, target_steps):
         motion_times = self._motion_times + episode_step_count * self._timestep

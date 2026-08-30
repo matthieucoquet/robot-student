@@ -55,9 +55,10 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
     ) -> Environment:
         mjcf_path, control_mode, initial_pose, initial_joint_positions = g1_configuration(self.is_29_dof)
 
-        motion = [Path(__file__).parent / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"]
+        experiment_path = Path(__file__).parent.parent
+        motion = [experiment_path / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"]
 
-        motion_library = MotionLibrary(motion)
+        motion_library = MotionLibrary(motion, device=engine.device)
 
         joint_reward_weight = (
             1.0,  # Left hip pitch.
@@ -109,6 +110,7 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
             control_mode=control_mode,
             task=task,
             control_frequency=self.control_frequency,
+            initial_pose=initial_pose,
             key_link_names=key_link_names,
             target_steps=[1, 2, 3],
         )

@@ -26,7 +26,7 @@ class CharacterEnvironment(Environment):
         control_mode: ControlMode,
         task: CharacterTask,
         control_frequency: int,
-        initial_pose: Sequence[float] | None = None,
+        initial_pose: Sequence[float],
         key_link_names: Sequence[str] = (),
         maximum_episode_steps: int = 1_000,
     ) -> None:
@@ -45,18 +45,17 @@ class CharacterEnvironment(Environment):
         )
         self._engine.build_scene(environment_count=environment_count, env_spacing=(2.0, 2.0))
 
-        if initial_pose:
-            initial_pose_tensor = torch.tensor(
-                initial_pose,
-                dtype=torch.float32,
-                device=device,
-            )
-            expected_shape = (self._robot.n_qs,)
-            if initial_pose_tensor.shape != expected_shape:
-                raise ValueError(f"initial_pose must have shape {expected_shape}, got {tuple(initial_pose_tensor.shape)}")
-            batched_initial_pose = initial_pose_tensor.expand(environment_count, -1).contiguous()
-            self._robot.set_default_pose(batched_initial_pose)
-            self._engine.register_initial_pose()
+        initial_pose_tensor = torch.tensor(
+            initial_pose,
+            dtype=torch.float32,
+            device=device,
+        )
+        expected_shape = (self._robot.n_qs,)
+        if initial_pose_tensor.shape != expected_shape:
+            raise ValueError(f"initial_pose must have shape {expected_shape}, got {tuple(initial_pose_tensor.shape)}")
+        batched_initial_pose = initial_pose_tensor.expand(environment_count, -1).contiguous()
+        self._robot.set_default_pose(batched_initial_pose)
+        self._engine.register_initial_pose()
 
         self._schema = self._compute_schema()
         self._maximum_episode_steps = maximum_episode_steps
