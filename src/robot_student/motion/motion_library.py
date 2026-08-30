@@ -4,7 +4,7 @@ import torch
 from genesis.utils.geom import slerp
 
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.motion.motion import Motion
+from robot_student.motion.motion_clip import MotionClip
 
 
 class MotionLibrary:
@@ -12,22 +12,22 @@ class MotionLibrary:
         if not motion_paths:
             raise ValueError("At least one motion path is required")
 
-        motions: list[Motion] = []
+        motions: list[MotionClip] = []
 
         for motion_path in motion_paths:
-            motion = torch.load(motion_path, weights_only=False)
-            if not isinstance(motion, Motion):
-                raise TypeError(f"Expected a Motion in {motion_path}, got {type(motion).__name__}")
-            motions.append(motion)
+            motion_clip = torch.load(motion_path, weights_only=False)
+            if not isinstance(motion_clip, MotionClip):
+                raise TypeError(f"Expected a MotionClip in {motion_path}, got {type(motion_clip).__name__}")
+            motions.append(motion_clip)
 
-        frame_device = motions[0].root_position.device
-        self.frame_counts = torch.tensor([motion.frame_count for motion in motions], dtype=torch.int64, device=frame_device)
+        frame_device = motions[0].frames.root_position.device
+        self.frame_counts = torch.tensor([motion_clip.frame_count for motion_clip in motions], dtype=torch.int64, device=frame_device)
         self.frame_starts = self.frame_counts.cumsum(dim=0) - self.frame_counts
         self.motion_weights = self.frame_counts.to(torch.float32)  # Weighting by motion length for now
         self.motion_durations = torch.tensor(
-            [motion.frame_count / motion.frequency for motion in motions], dtype=torch.float32, device=frame_device
+            [motion_clip.frame_count / motion_clip.frequency for motion_clip in motions], dtype=torch.float32, device=frame_device
         )
-        self.frames = torch.cat(motions, dim=0)
+        self.frames = torch.cat([motion_clip.frames for motion_clip in motions], dim=0)
 
     def sample(self, count: int) -> tuple[torch.Tensor, torch.Tensor]:
         sample_motion_indices = torch.multinomial(self.motion_weights, count, replacement=True)
@@ -55,7 +55,7 @@ class MotionLibrary:
         second_frame = self.frames[second_frame_id]
 
         blend = blend.unsqueeze(-1)
-        link_blend = blend.unsqueeze(-2).expand(*first_frame.link_rotations.shape[:-1], 1)
+        link_blend = blend.unsqueeze(-2)
 
         return RobotState(
             root_position=torch.lerp(first_frame.root_position, second_frame.root_position, blend),
@@ -64,6 +64,7 @@ class MotionLibrary:
             root_velocity=torch.lerp(first_frame.root_velocity, second_frame.root_velocity, blend),
             root_angular_velocity=torch.lerp(first_frame.root_angular_velocity, second_frame.root_angular_velocity, blend),
             joint_dof_velocities=torch.lerp(first_frame.joint_dof_velocities, second_frame.joint_dof_velocities, blend),
-            link_positions=torch.lerp(first_frame.link_positions, second_frame.link_positions, link_blend),
+            world_link_positions=torch.lerp(first_frame.world_link_positions, second_frame.world_link_positions, link_blend),
             # link_rotations=slerp(first_frame.link_rotations, second_frame.link_rotations, link_blend),
+            batch_size=time.shape,
         )

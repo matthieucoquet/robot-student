@@ -6,12 +6,58 @@ from pathlib import Path
 import torch
 
 from robot_student.engine.genesis_engine import GenesisEngine
-from robot_student.engine.kinematic_robot import RobotState
-from robot_student.motion.motion import Motion
+from robot_student.engine.kinematic_robot import GeneralizedRobotState, RobotState
+from robot_student.motion.motion_clip import MotionClip
+from robot_student.util.geometry import quat_angular_displacement
 from robot_student.util.logging import configure_logging
 
 ROOT_POSITION_COLUMNS = ("root_pos_x(m)", "root_pos_y(m)", "root_pos_z(m)")
 ROOT_ROTATION_COLUMNS = ("root_rot_w", "root_rot_x", "root_rot_y", "root_rot_z")
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class _RawMotionClip:
+    frequency: int
+    root_position: torch.Tensor
+    root_rotation: torch.Tensor
+    joint_dof_positions: torch.Tensor
+
+    @property
+    def frame_count(self) -> int:
+        return self.root_position.shape[0]
+
+    @torch.no_grad()
+    def compute_generalized_states(self) -> GeneralizedRobotState:
+        if self.frame_count < 2:
+            raise ValueError(f"At least two frames are required to compute velocities, got {self.frame_count}")
+
+        root_velocity = torch.zeros_like(self.root_position)
+        root_angular_velocity = torch.zeros_like(self.root_position)
+        joint_dof_velocities = torch.zeros_like(self.joint_dof_positions)
+
+        root_velocity[1:-1].copy_((self.root_position[2:] - self.root_position[:-2]) * (0.5 * self.frequency))
+        root_velocity[0].copy_((self.root_position[1] - self.root_position[0]) * self.frequency)
+        root_velocity[-1].copy_((self.root_position[-1] - self.root_position[-2]) * self.frequency)
+
+        root_angular_velocity[1:-1].copy_(
+            quat_angular_displacement(self.root_rotation[:-2], self.root_rotation[2:]) * (0.5 * self.frequency)
+        )
+        root_angular_velocity[0].copy_(quat_angular_displacement(self.root_rotation[0], self.root_rotation[1]) * self.frequency)
+        root_angular_velocity[-1].copy_(quat_angular_displacement(self.root_rotation[-2], self.root_rotation[-1]) * self.frequency)
+
+        joint_dof_velocities[1:-1].copy_((self.joint_dof_positions[2:] - self.joint_dof_positions[:-2]) * (0.5 * self.frequency))
+        joint_dof_velocities[0].copy_((self.joint_dof_positions[1] - self.joint_dof_positions[0]) * self.frequency)
+        joint_dof_velocities[-1].copy_((self.joint_dof_positions[-1] - self.joint_dof_positions[-2]) * self.frequency)
+
+        return GeneralizedRobotState(
+            root_position=self.root_position,
+            root_rotation=self.root_rotation,
+            joint_dof_positions=self.joint_dof_positions,
+            root_velocity=root_velocity,
+            root_angular_velocity=root_angular_velocity,
+            joint_dof_velocities=joint_dof_velocities,
+            batch_size=(self.frame_count,),
+        )
 
 
 @dataclass(kw_only=True)
@@ -45,41 +91,39 @@ class MotionPreprocess:
         self._read_all_motions()
 
         # TODO batch is with several frame of the motion at the same time
-        for source_path, motion in self._motions:
-            link_positions = self._kinematic_robot.get_links_position(relative=False)[0]
-            link_rotations = self._kinematic_robot.get_links_rotation(relative=False)[0]
-            motion.link_positions = link_positions.new_empty((motion.frame_count, *link_positions.shape))
-            motion.link_rotations = link_rotations.new_empty((motion.frame_count, *link_rotations.shape))
+        for source_path, raw_motion in self._motions:
+            generalized_states = raw_motion.compute_generalized_states()
+            world_link_positions = torch.empty(
+                (raw_motion.frame_count, self._kinematic_robot.n_links, 3),
+                dtype=generalized_states.root_position.dtype,
+                device=self._engine.device,
+            )
 
-            for i in range(motion.frame_count):
-                self._kinematic_robot.set_state(
-                    RobotState(
-                        root_position=motion.root_position[i],
-                        root_rotation=motion.root_rotation[i],
-                        joint_dof_positions=motion.joint_dof_positions[i],
-                        root_velocity=motion.root_velocity[i],
-                        root_angular_velocity=motion.root_angular_velocity[i],
-                        joint_dof_velocities=motion.joint_dof_velocities[i],
-                    )
-                )
+            for frame_index in range(raw_motion.frame_count):
+                state = self._kinematic_robot.set_state(generalized_states[frame_index])
+                world_link_positions[frame_index].copy_(state.world_link_positions[0])
 
-                motion.link_positions[i].copy_(self._kinematic_robot.get_links_position(relative=False)[0])
-                motion.link_rotations[i].copy_(self._kinematic_robot.get_links_rotation(relative=False)[0])
-                # motion.link_velocities[i].copy_(self._kinematic_robot.get_links_velocity()[0])
-                # motion.link_angular_velocity[i].copy_(self._kinematic_robot.get_links_angular_velocity()[0])
-
+            frames = RobotState(
+                root_position=generalized_states.root_position,
+                root_rotation=generalized_states.root_rotation,
+                joint_dof_positions=generalized_states.joint_dof_positions,
+                root_velocity=generalized_states.root_velocity,
+                root_angular_velocity=generalized_states.root_angular_velocity,
+                joint_dof_velocities=generalized_states.joint_dof_velocities,
+                world_link_positions=world_link_positions,
+                batch_size=generalized_states.batch_size,
+            )
+            motion_clip = MotionClip(frequency=raw_motion.frequency, frames=frames.cpu())
             output_path = self.output_folder / source_path.with_suffix(".pt").name
-            torch.save(motion.cpu(), output_path)
+            torch.save(motion_clip, output_path)
 
     def _read_all_motions(self):
         for file_path in sorted(self.motion_folder.glob("*.csv")):
             if file_path.is_file():
-                motion = self._read_csv(file_path)
-                motion.compute_velocities()
-                self._motions.append((file_path, motion))
+                self._motions.append((file_path, self._read_csv(file_path)))
 
     @staticmethod
-    def _read_csv(file_path: Path) -> Motion:
+    def _read_csv(file_path: Path) -> _RawMotionClip:
         with open(file_path, newline="", encoding="utf-8") as file:
             reader = csv.reader(file)
             try:
@@ -100,11 +144,9 @@ class MotionPreprocess:
         if not joint_dof_columns:
             raise ValueError(f"CSV file has no joint DOF columns: {file_path}")
 
-        data = {
-            "frequency": 120,
-            "root_position": torch.stack([column_tensors[column_name] for column_name in ROOT_POSITION_COLUMNS], dim=-1),
-            "root_rotation": torch.stack([column_tensors[column_name] for column_name in ROOT_ROTATION_COLUMNS], dim=-1),
-            "joint_dof_positions": torch.stack([column_tensors[column_name] for column_name in joint_dof_columns], dim=-1),
-        }
-        batch_size = data["root_position"].shape[:-1]
-        return Motion(**data, batch_size=batch_size)
+        return _RawMotionClip(
+            frequency=120,
+            root_position=torch.stack([column_tensors[column_name] for column_name in ROOT_POSITION_COLUMNS], dim=-1),
+            root_rotation=torch.stack([column_tensors[column_name] for column_name in ROOT_ROTATION_COLUMNS], dim=-1),
+            joint_dof_positions=torch.stack([column_tensors[column_name] for column_name in joint_dof_columns], dim=-1),
+        )

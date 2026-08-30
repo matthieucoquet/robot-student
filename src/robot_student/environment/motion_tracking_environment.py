@@ -37,8 +37,8 @@ class DeepMimicTask(CharacterTask):
         velocity_error = torch.sum(self._joint_reward_weight * velocity_difference.square(), dim=-1)
         velocity_reward = torch.exp(-0.01 * velocity_error)
 
-        key_link_positions = state.link_positions.index_select(-2, self._key_link_indices)
-        reference_key_link_positions = reference.link_positions.index_select(-2, self._key_link_indices)
+        key_link_positions = state.world_link_positions.index_select(-2, self._key_link_indices)
+        reference_key_link_positions = reference.world_link_positions.index_select(-2, self._key_link_indices)
         key_link_positions -= -state.root_position.unsqueeze(-2)
         reference_key_link_positions -= reference.root_position.unsqueeze(-2)
 
@@ -59,7 +59,7 @@ class DeepMimicTask(CharacterTask):
         return 0.5 * pose_reward + 0.1 * velocity_reward + 0.15 * root_pose_reward + 0.1 * root_velocity_reward + 0.15 * key_position_reward
 
     def compute_terminal(self, state: RobotState, reference: RobotState):
-        link_differences = state.link_positions - reference.link_positions
+        link_differences = state.world_link_positions - reference.world_link_positions
         link_distances = torch.sum(link_differences.square(), dim=-1)
         link_distances = torch.max(link_distances, dim=-1)[0]
 
@@ -133,9 +133,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
         reference_state = self._reference_robot.reset()
-        self._robot.set_state(reference_state)
-
-        self._state = reference_state
+        self._state = self._robot.set_state(reference_state)
         return self._get_observation()
 
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
@@ -148,9 +146,8 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         self._engine.reset(environment_indices=environment_indices)  # Probably not needed to call genesis reset?
 
         reference_state = self._reference_robot.reset(environment_indices)
-        self._robot.set_state(reference_state, environment_indices=environment_indices)
-
-        self._state.copy_environments_(environment_indices, reference_state)
+        reset_state = self._robot.set_state(reference_state, environment_indices=environment_indices)
+        self._state.copy_environments_(environment_indices, reset_state)
         return self._get_observation()
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
@@ -179,7 +176,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         targets = self._reference_robot.get_target_states(self._episode_step_count, self._target_steps)
 
         inverse_headings = inverse_heading_rotation(targets.root_rotation)
-        key_link_positions = targets.link_positions.index_select(-2, self._key_link_indices)
+        key_link_positions = targets.world_link_positions.index_select(-2, self._key_link_indices)
         heading_relative_key_link_positions = transform_by_quat(
             key_link_positions - targets.root_position.unsqueeze(-2),
             inverse_headings.unsqueeze(-2),

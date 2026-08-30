@@ -1,5 +1,5 @@
 import torch
-from genesis.utils.geom import _tc_transform_by_quat, axis_angle_to_quat
+from genesis.utils.geom import _tc_transform_by_quat, axis_angle_to_quat, inv_quat, transform_quat_by_quat
 
 
 def quat_to_rot6d(rotation: torch.Tensor) -> torch.Tensor:
@@ -38,6 +38,11 @@ def quat_to_rotation_vector(rotation: torch.Tensor) -> torch.Tensor:
     scale = torch.where(vector_norm > epsilon, angle / vector_norm.clamp_min(epsilon), 2.0)
     shortest_path_sign = torch.where(scalar < 0, -1.0, 1.0)
     return shortest_path_sign * scale * vector
+
+
+def quat_angular_displacement(from_rotation: torch.Tensor, to_rotation: torch.Tensor) -> torch.Tensor:
+    relative_rotation = transform_quat_by_quat(inv_quat(from_rotation), to_rotation)
+    return quat_to_rotation_vector(relative_rotation)
 
 
 def heading_angle(rotation: torch.Tensor) -> torch.Tensor:

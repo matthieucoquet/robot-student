@@ -140,7 +140,7 @@ class CharacterEnvironment(Environment):
         root_angular_velocity = self._state.root_angular_velocity
 
         inverse_heading = inverse_heading_rotation(root_rotation)
-        key_link_positions = self._state.link_positions.index_select(-2, self._key_link_indices)
+        key_link_positions = self._state.world_link_positions.index_select(-2, self._key_link_indices)
 
         heading_relative_key_link_positions = transform_by_quat(
             key_link_positions - root_position.unsqueeze(-2),

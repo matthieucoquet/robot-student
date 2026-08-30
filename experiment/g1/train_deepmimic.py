@@ -22,7 +22,7 @@ if __name__ == "__main__":
     # )
 
     training = Training(
-        experiment_name="g1_walking",
+        experiment_name="g1_deepmimic",
         run_name="ppo",
         seed=0,
         use_cuda=True,

@@ -1,36 +1,42 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 import torch
 from genesis.engine.entities import KinematicEntity
+from tensordict import TensorClass
 
 
-@dataclass(frozen=True, kw_only=True, slots=True)
-class RobotState:
+class GeneralizedRobotState(TensorClass["autocast"]):
     root_position: torch.Tensor
     root_rotation: torch.Tensor
     joint_dof_positions: torch.Tensor
     root_velocity: torch.Tensor
     root_angular_velocity: torch.Tensor
     joint_dof_velocities: torch.Tensor
-    link_positions: torch.Tensor
-    # link_rotations: torch.Tensor | None
 
-    def copy_environments_(self, environment_indices: torch.Tensor, source: "RobotState") -> None:
+    def copy_environments_(self, environment_indices: torch.Tensor, source: "GeneralizedRobotState") -> None:
         self.root_position.index_copy_(0, environment_indices, source.root_position)
         self.root_rotation.index_copy_(0, environment_indices, source.root_rotation)
         self.joint_dof_positions.index_copy_(0, environment_indices, source.joint_dof_positions)
         self.root_velocity.index_copy_(0, environment_indices, source.root_velocity)
         self.root_angular_velocity.index_copy_(0, environment_indices, source.root_angular_velocity)
         self.joint_dof_velocities.index_copy_(0, environment_indices, source.joint_dof_velocities)
-        self.link_positions.index_copy_(0, environment_indices, source.link_positions)
+
+
+class RobotState(GeneralizedRobotState):
+    world_link_positions: torch.Tensor
+
+    def copy_environments_(self, environment_indices: torch.Tensor, source: "RobotState") -> None:
+        GeneralizedRobotState.copy_environments_(self, environment_indices, source)
+        self.world_link_positions.index_copy_(0, environment_indices, source.world_link_positions)
 
 
 class KinematicRobot:
     def __init__(self, entity: KinematicEntity) -> None:
         self._entity: KinematicEntity = entity
+        self.n_links = self._entity.n_links
         self.n_qs = self._entity.n_qs
         self.n_dofs = self._entity.n_dofs
+        self.n_root_qs = self._entity.links[0].n_qs
         self.n_root_dofs = self._entity.links[0].n_dofs
         self.n_joint_dofs = self.n_dofs - self.n_root_dofs
 
@@ -48,36 +54,31 @@ class KinematicRobot:
         return dofs_velocity[..., self.n_root_dofs :]
 
     def get_state(self, environment_indices: torch.Tensor | None = None) -> RobotState:
+        generalized_positions = self._entity.get_qpos(envs_idx=environment_indices)
+        generalized_velocities = self._entity.get_dofs_velocity(envs_idx=environment_indices)
         return RobotState(
-            root_position=self._entity.get_pos(envs_idx=environment_indices, relative=False),
-            root_rotation=self._entity.get_quat(envs_idx=environment_indices, relative=False),
-            joint_dof_positions=self.get_joint_dof_positions(environment_indices),
-            root_velocity=self._entity.get_vel(envs_idx=environment_indices),
-            root_angular_velocity=self._entity.get_ang(envs_idx=environment_indices),
-            joint_dof_velocities=self.get_joint_dof_velocities(environment_indices),
-            link_positions=self._entity.get_links_pos(envs_idx=environment_indices, relative=False),
+            root_position=generalized_positions[..., :3],
+            root_rotation=generalized_positions[..., 3 : self.n_root_qs],
+            joint_dof_positions=generalized_positions[..., self.n_root_qs :],
+            root_velocity=generalized_velocities[..., :3],
+            root_angular_velocity=generalized_velocities[..., 3 : self.n_root_dofs],
+            joint_dof_velocities=generalized_velocities[..., self.n_root_dofs :],
+            world_link_positions=self._entity.get_links_pos(envs_idx=environment_indices, relative=False),
+            batch_size=generalized_positions.shape[:-1],
         )
 
-    # def get_links_position(
-    #     self,
-    #     link_indices: Sequence[int] | torch.Tensor | None = None,
-    #     environment_indices: torch.Tensor | None = None,
-    #     relative: bool = False,
-    # ) -> torch.Tensor:
-    #     return self._entity.get_links_pos(
-    #         links_idx_local=link_indices,
-    #         envs_idx=environment_indices,
-    #         relative=relative,
-    #     )
+    def get_links_position(
+        self,
+        environment_indices: torch.Tensor | None = None,
+        relative: bool = False,
+    ) -> torch.Tensor:
+        return self._entity.get_links_pos(
+            envs_idx=environment_indices,
+            relative=relative,
+        )
 
     def get_links_rotation(self, environment_indices: torch.Tensor | None = None, relative: bool = False) -> torch.Tensor:
         return self._entity.get_links_quat(envs_idx=environment_indices, relative=relative)
-
-    # def get_links_velocity(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
-    #     return self._entity.get_links_vel(envs_idx=environment_indices)
-
-    # def get_links_angular_velocity(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
-    #     return self._entity.get_links_ang(envs_idx=environment_indices)
 
     def set_generalized_positions(
         self,
@@ -100,7 +101,7 @@ class KinematicRobot:
         self._entity.set_dofs_velocity(velocity=velocities, envs_idx=environment_indices, skip_forward=True)
         self._entity.set_qpos(generalized_positions, envs_idx=environment_indices, zero_velocity=False)
 
-    def set_state(self, state: RobotState, environment_indices: torch.Tensor | None = None) -> None:
+    def set_state(self, state: GeneralizedRobotState, environment_indices: torch.Tensor | None = None) -> RobotState:
         generalized_positions = torch.cat(
             (state.root_position, state.root_rotation, state.joint_dof_positions),
             dim=-1,
@@ -113,4 +114,14 @@ class KinematicRobot:
             generalized_positions,
             generalized_velocities,
             environment_indices=environment_indices,
+        )
+        return RobotState(
+            root_position=state.root_position,
+            root_rotation=state.root_rotation,
+            joint_dof_positions=state.joint_dof_positions,
+            root_velocity=state.root_velocity,
+            root_angular_velocity=state.root_angular_velocity,
+            joint_dof_velocities=state.joint_dof_velocities,
+            world_link_positions=self.get_links_position(environment_indices=environment_indices),
+            batch_size=state.batch_size,
         )
