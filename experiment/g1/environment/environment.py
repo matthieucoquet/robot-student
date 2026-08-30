@@ -8,7 +8,7 @@ from robot_student.environment.motion_tracking_environment import DeepMimicTask,
 from robot_student.motion import MotionLibrary
 from robot_student.run.environment_factory import EnvironmentFactory
 
-from .robot import g1_configuration
+from .robot_configuration import g1_configuration
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -110,4 +110,5 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
             task=task,
             control_frequency=self.control_frequency,
             key_link_names=key_link_names,
+            target_steps=[1, 2, 3],
         )

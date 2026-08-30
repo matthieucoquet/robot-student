@@ -100,6 +100,16 @@ class GenesisEngine:
     def step(self) -> None:
         self._scene.step()
 
+    def follow_robot(self, robot: KinematicRobot, smoothing: float | None = 0.05) -> None:
+        viewer = self._scene.viewer
+        if viewer is None:
+            raise RuntimeError("Cannot follow a robot without an active viewer")
+        viewer.follow_entity(robot._entity, smoothing=smoothing, fix_orientation=False)
+
+    def is_viewer_alive(self) -> bool:
+        viewer = self._scene.viewer
+        return viewer is not None and viewer.is_alive()
+
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
         self._scene.reset(envs_idx=environment_indices)
 
