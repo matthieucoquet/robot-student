@@ -130,7 +130,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
                     data_type=observation_type,
                 ),
             },
-            actions={"control": self._robot.get_action_schema()},
+            actions={"control": self._get_control_schema()},
         )
 
     def reset(self) -> TensorDictBase:
@@ -152,7 +152,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         return self._get_observation()
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        self._robot.apply_action(action["control"].detach())
+        self._robot.apply_control(action["control"].detach())
         for _ in range(self._simulation_steps_per_control_step):
             self._engine.step()
 

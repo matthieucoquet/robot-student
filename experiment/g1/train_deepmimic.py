@@ -7,8 +7,8 @@ from .environment.environment import TrackerEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = TrackerEnvironmentFactory(headless=True, environment_count=4096)
-    learner = get_ppo_factory(compile_models=True)
+    environment = TrackerEnvironmentFactory(headless=True, environment_count=2048)
+    learner = get_ppo_factory(motion_tracking=True, compile_models=True)
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 

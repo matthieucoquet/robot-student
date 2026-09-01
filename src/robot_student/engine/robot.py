@@ -3,7 +3,6 @@ import torch
 from genesis.engine.entities import RigidEntity
 
 from robot_student.engine.control_mode import ControlMode, PositionControlMode
-from robot_student.environment.schema import TensorSchema
 
 from .kinematic_robot import KinematicRobot
 
@@ -67,13 +66,13 @@ class Robot(KinematicRobot):
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
-    def get_action_schema(self) -> TensorSchema:
-        return TensorSchema(
-            shape=(self.n_controlled_dofs,),
-            data_type=torch.float32,
-            bounds=(self._action_lower_bounds, self._action_upper_bounds),
-            default_value=self._default_control_positions,
-        )
+    @property
+    def control_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self._control_lower_bounds, self._control_upper_bounds
+
+    @property
+    def default_control(self) -> torch.Tensor:
+        return self._default_control_positions
 
     def set_default_pose(self, default_pose: torch.Tensor) -> None:
         self._default_pose = default_pose.detach().clone()
@@ -85,7 +84,7 @@ class Robot(KinematicRobot):
         self._default_control_positions = controlled_positions.detach().clone()
 
         lower_bounds, upper_bounds = self._entity.get_dofs_limit(self._controlled_dof_indices)
-        self._action_lower_bounds, self._action_upper_bounds = _scale_action_limits(
+        self._control_lower_bounds, self._control_upper_bounds = _scale_control_limits(
             lower_bounds, upper_bounds, self._control_mode.action_limit_scale
         )
         self._control_targets = self._default_pose.new_empty((*self._default_pose.shape[:-1], self.n_controlled_dofs))
@@ -100,18 +99,18 @@ class Robot(KinematicRobot):
         control_forces = self.get_control_forces(environment_indices)
         return control_forces.mul_(self._inverse_maximum_control_forces)
 
-    def apply_action(self, action: torch.Tensor) -> None:
+    def apply_control(self, control: torch.Tensor) -> None:
         torch.clamp(
-            action,
-            min=self._action_lower_bounds,
-            max=self._action_upper_bounds,
+            control,
+            min=self._control_lower_bounds,
+            max=self._control_upper_bounds,
             out=self._control_targets,
         )
 
         self._entity.control_dofs_position(self._control_targets, self._controlled_dof_indices)
 
 
-def _scale_action_limits(
+def _scale_control_limits(
     lower_bounds: torch.Tensor,
     upper_bounds: torch.Tensor,
     action_limit_scale: float | None,

@@ -94,7 +94,7 @@ class CharacterEnvironment(Environment):
         return self._get_observation()
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        self._robot.apply_action(action["control"].detach())
+        self._robot.apply_control(action["control"].detach())
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
         normalized_control_forces = self._robot.get_normalized_control_forces()
@@ -126,7 +126,15 @@ class CharacterEnvironment(Environment):
                     data_type=observation_type,
                 )
             },
-            actions={"control": self._robot.get_action_schema()},
+            actions={"control": self._get_control_schema()},
+        )
+
+    def _get_control_schema(self) -> TensorSchema:
+        return TensorSchema(
+            shape=(self._robot.n_controlled_dofs,),
+            data_type=torch.float32,
+            bounds=self._robot.control_bounds,
+            default_value=self._robot.default_control,
         )
 
     def _get_observation(self) -> TensorDictBase:

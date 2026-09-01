@@ -41,7 +41,7 @@ class GenesisEngine:
 
         if self._recording_camera is not None:
             self._recording_camera.follow_entity(
-                robot,
+                entity,
                 smoothing=0.05,
                 fix_orientation=False,
             )
