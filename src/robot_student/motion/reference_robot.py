@@ -18,9 +18,9 @@ class ReferenceRobot:
         self._motion_ids = torch.empty(count, dtype=torch.int64, device=device)
         self._motion_times = torch.empty(count, dtype=torch.float32, device=device)
 
-    def reset(self, environment_indices: torch.Tensor | None = None, is_training: bool = False) -> RobotState:
+    def reset(self, *, random_sampling: bool, environment_indices: torch.Tensor | None = None) -> RobotState:
         reset_count = self._motion_ids.shape[0] if environment_indices is None else environment_indices.numel()
-        if is_training:
+        if random_sampling:
             sampled_motion_ids, sampled_motion_times = self._motion_library.sample(reset_count)
         else:
             sampled_motion_ids = torch.zeros(reset_count, dtype=torch.int64, device=self._motion_ids.device)

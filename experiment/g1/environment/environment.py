@@ -48,6 +48,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
 @dataclass(frozen=True, kw_only=True, slots=True)
 class TrackerEnvironmentFactory(EnvironmentFactory):
     is_29_dof: bool = True
+    random_reference_sampling: bool = True
 
     def create_environment(
         self,
@@ -56,9 +57,9 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
         mjcf_path, control_mode, initial_pose, initial_joint_positions = g1_configuration(self.is_29_dof)
 
         experiment_path = Path(__file__).parent.parent
-        motion = [experiment_path / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"]
+        motion_paths = [experiment_path / "dataset" / "preprocessed" / "v1" / "BM_Long_Jump_00002.pt"]
 
-        motion_library = MotionLibrary(motion, device=engine.device)
+        motion_library = MotionLibrary(motion_paths, device=engine.device)
 
         joint_reward_weight = (
             1.0,  # Left hip pitch.
@@ -113,4 +114,5 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
             initial_pose=initial_pose,
             key_link_names=key_link_names,
             target_steps=[1, 2, 3],
+            random_reference_sampling=self.random_reference_sampling,
         )

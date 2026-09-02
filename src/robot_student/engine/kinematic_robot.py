@@ -40,6 +40,19 @@ class KinematicRobot:
         self.n_root_dofs = self._entity.links[0].n_dofs
         self.n_joint_dofs = self.n_dofs - self.n_root_dofs
 
+        self.joint_dof_names = self._get_joint_dof_names()
+
+    def _get_joint_dof_names(self) -> tuple[str, ...]:
+        joint_dof_names = tuple(
+            joint.name if joint.n_dofs == 1 else f"{joint.name}[{offset}]"
+            for joint in self._entity.joints
+            for offset, dof_index in enumerate(joint.dofs_idx_local)
+            if dof_index >= self.n_root_dofs
+        )
+        if len(joint_dof_names) != self.n_joint_dofs:
+            raise RuntimeError(f"Expected {self.n_joint_dofs} named joint DOFs, found {len(joint_dof_names)}")
+        return joint_dof_names
+
     def get_link_indices(self, link_names: Sequence[str]) -> tuple[int, ...]:
         link_indices_by_name = {link.name: link.idx_local for link in self._entity.links}
         link_indices = [link_indices_by_name[link] for link in link_names]

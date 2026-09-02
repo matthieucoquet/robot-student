@@ -1,8 +1,11 @@
 import time
+from pathlib import Path
 
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import HfHubHTTPError
 
 RETRY_DELAY_SECONDS = 5 * 60 + 1
+DOWNLOAD_DIRECTORY = Path(__file__).parents[1] / "dataset" / "motion_decode"
 
 while True:
     try:
@@ -15,13 +18,14 @@ while True:
                 "samples/5.Dance/**",
                 "samples/1.1.Basic_Movement_Category/1.1.1.High_Dynamic_Movement/**",
             ],
-            local_dir="./experiment/g1/dataset/motion_decode",
+            local_dir=DOWNLOAD_DIRECTORY,
             max_workers=1,
             token=True,
         )
         break
-    except ConnectionError as error:
-        if "429 Too Many Requests" not in str(error):
+    except (ConnectionError, HfHubHTTPError) as error:
+        status_code = getattr(getattr(error, "response", None), "status_code", None)
+        if status_code != 429 and "429 Too Many Requests" not in str(error):
             raise
         print(f"Hugging Face rate limit reached; retrying in {RETRY_DELAY_SECONDS} seconds.")
         time.sleep(RETRY_DELAY_SECONDS)

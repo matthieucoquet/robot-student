@@ -26,11 +26,11 @@ class DeepMimicTask(CharacterTask):
     def set_key_link_indices(self, key_link_indices):
         self._key_link_indices = key_link_indices
 
-    def compute_reward(
+    def _compute_reward(
         self,
         state: RobotState,
         reference: RobotState,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
         position_difference = state.joint_dof_positions - reference.joint_dof_positions
         position_error = torch.sum(self._joint_reward_weight * position_difference.square(), dim=-1)
         pose_reward = torch.exp(-0.25 * position_error)
@@ -58,9 +58,13 @@ class DeepMimicTask(CharacterTask):
         key_position_error = torch.sum((key_link_positions - reference_key_link_positions).square(), dim=(-2, -1))
         key_position_reward = torch.exp(-10.0 * key_position_error)
 
-        return 0.5 * pose_reward + 0.1 * velocity_reward + 0.15 * root_pose_reward + 0.1 * root_velocity_reward + 0.15 * key_position_reward
+        reward = (
+            0.5 * pose_reward + 0.1 * velocity_reward + 0.15 * root_pose_reward + 0.1 * root_velocity_reward + 0.15 * key_position_reward
+        )
+        reward_components = (pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward)
+        return reward, reward_components
 
-    def compute_terminal(self, state: RobotState, reference: RobotState):
+    def _compute_terminal(self, state: RobotState, reference: RobotState):
         link_differences = state.world_link_positions - reference.world_link_positions
         link_distances = torch.sum(link_differences.square(), dim=-1)
         link_distances = torch.max(link_distances, dim=-1)[0]
@@ -73,9 +77,20 @@ class DeepMimicTask(CharacterTask):
         reference: RobotState,
         **_,
     ) -> CharacterTaskStep:
-        reward = self.compute_reward(state, reference)
-        terminal = self.compute_terminal(state, reference)
-        return CharacterTaskStep(reward=reward, terminal=terminal, transition_metrics={})
+        reward, reward_components = self._compute_reward(state, reference)
+        pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward = reward_components
+        terminal = self._compute_terminal(state, reference)
+        return CharacterTaskStep(
+            reward=reward,
+            terminal=terminal,
+            transition_metrics={
+                "task/pose_reward_mean": pose_reward.mean(),
+                "task/velocity_reward_mean": velocity_reward.mean(),
+                "task/root_pose_reward_mean": root_pose_reward.mean(),
+                "task/root_velocity_reward_mean": root_velocity_reward.mean(),
+                "task/key_position_reward_mean": key_position_reward.mean(),
+            },
+        )
 
 
 class MotionTrackingEnvironment(CharacterEnvironment):
@@ -90,13 +105,14 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         control_frequency: int,
         initial_pose: Sequence[float],
         key_link_names: Sequence[str],
-        target_steps: list,
+        target_steps: Sequence[float],
+        random_reference_sampling: bool = False,
         maximum_episode_steps: int = 1_000,
     ) -> None:
-
         control_timestep = 1 / control_frequency
         self._reference_robot = ReferenceRobot(environment_count, motion_library, control_timestep, engine.device)
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=engine.device)
+        self._random_reference_sampling = random_reference_sampling
 
         super().__init__(
             engine,
@@ -135,7 +151,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
 
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
-        reference_state = self._reference_robot.reset()
+        reference_state = self._reference_robot.reset(random_sampling=self._random_reference_sampling)
         self._state = self._robot.set_state(reference_state)
         return self._get_observation()
 
@@ -144,8 +160,11 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         environment_indices = done.reshape(-1).nonzero().reshape(-1)
 
         if environment_indices.numel() > 0:
-            # self._engine.reset(environment_indices=environment_indices)  # Probably not needed to call genesis reset?
-            reference_state = self._reference_robot.reset(environment_indices)
+            self._engine.reset(environment_indices=environment_indices)
+            reference_state = self._reference_robot.reset(
+                random_sampling=self._random_reference_sampling,
+                environment_indices=environment_indices,
+            )
             reset_state = self._robot.set_state(reference_state, environment_indices=environment_indices)
             self._state.copy_environments_(environment_indices, reset_state)
 
