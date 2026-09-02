@@ -57,7 +57,7 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
         mjcf_path, control_mode, initial_pose, initial_joint_positions = g1_configuration(self.is_29_dof)
 
         experiment_path = Path(__file__).parent.parent
-        motion_paths = [experiment_path / "dataset" / "preprocessed" / "v1" / "BM_Long_Jump_00002.pt"]
+        motion_paths = [experiment_path / "dataset" / "preprocessed" / "v1" / "BG_Normal_Walking_00001.pt"]
 
         motion_library = MotionLibrary(motion_paths, device=engine.device)
 

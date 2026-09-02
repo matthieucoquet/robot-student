@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 import torch
 from genesis.engine.entities import KinematicEntity
+from genesis.utils.geom import inv_transform_by_quat
 from tensordict import TensorClass
 
 
@@ -9,8 +10,8 @@ class GeneralizedRobotState(TensorClass["autocast"]):
     root_position: torch.Tensor
     root_rotation: torch.Tensor
     joint_dof_positions: torch.Tensor
-    root_velocity: torch.Tensor
-    root_angular_velocity: torch.Tensor
+    root_velocity: torch.Tensor  # World coordinates
+    root_angular_velocity: torch.Tensor  # World coordinates
     joint_dof_velocities: torch.Tensor
 
     def copy_environments_(self, environment_indices: torch.Tensor, source: "GeneralizedRobotState") -> None:
@@ -74,7 +75,7 @@ class KinematicRobot:
             root_rotation=generalized_positions[..., 3 : self.n_root_qs],
             joint_dof_positions=generalized_positions[..., self.n_root_qs :],
             root_velocity=generalized_velocities[..., :3],
-            root_angular_velocity=generalized_velocities[..., 3 : self.n_root_dofs],
+            root_angular_velocity=self._entity.get_ang(envs_idx=environment_indices),
             joint_dof_velocities=generalized_velocities[..., self.n_root_dofs :],
             world_link_positions=self._entity.get_links_pos(envs_idx=environment_indices, relative=False),
             batch_size=generalized_positions.shape[:-1],
@@ -119,8 +120,9 @@ class KinematicRobot:
             (state.root_position, state.root_rotation, state.joint_dof_positions),
             dim=-1,
         )
+        local_root_angular_velocity = inv_transform_by_quat(state.root_angular_velocity, state.root_rotation)
         generalized_velocities = torch.cat(
-            (state.root_velocity, state.root_angular_velocity, state.joint_dof_velocities),
+            (state.root_velocity, local_root_angular_velocity, state.joint_dof_velocities),
             dim=-1,
         )
         self._set_generalized_state(

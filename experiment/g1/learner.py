@@ -32,7 +32,7 @@ def get_ppo_factory(*, motion_tracking: bool = False, compile_models: bool = Fal
         observation_keys=observation_keys,
     )
 
-    learning_rate = 3e-4
+    learning_rate = 2e-4
     policy_optimizer = partial(Adam, lr=learning_rate)
     value_optimizer = partial(Adam, lr=learning_rate)
 
