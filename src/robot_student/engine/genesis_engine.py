@@ -8,6 +8,14 @@ from robot_student.engine.kinematic_robot import KinematicRobot
 from robot_student.engine.robot import Robot
 
 
+class _MjcfCompatibleKinematicOptions(gs.options.KinematicOptions):
+    # Genesis 1.3.3 passes kinematic options through MJCF's rigid-friction warnings.
+    # These fields are only read while parsing and do not enable physics for kinematic entities.
+    friction_cone: gs.friction_cone = gs.friction_cone.pyramidal
+    enable_torsional_friction: bool = False
+    enable_rolling_friction: bool = False
+
+
 class GenesisEngine:
     def __init__(
         self,
@@ -24,6 +32,7 @@ class GenesisEngine:
         self.time_step = 1.0 / simulation_frequency
         self._scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=self.time_step),
+            kinematic_options=_MjcfCompatibleKinematicOptions(),
             show_viewer=show_viewer,
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
         )
@@ -48,10 +57,20 @@ class GenesisEngine:
 
         return robot
 
-    def add_kinematic_robot(self, xml_path: Path) -> KinematicRobot:
+    def add_kinematic_robot(
+        self,
+        xml_path: Path,
+        *,
+        position_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        color: tuple[float, float, float, float] | None = None,
+        name: str | None = None,
+    ) -> KinematicRobot:
+        surface = None if color is None else gs.surfaces.Default(color=color)
         entity = self._scene.add_entity(
-            gs.morphs.MJCF(file=str(xml_path)),
-            material=gs.materials.Rigid(),  # TODO: switch and retry kinematic
+            gs.morphs.MJCF(file=str(xml_path), collision=False, offset_pos=position_offset),
+            material=gs.materials.Kinematic(),
+            surface=surface,
+            name=name,
         )
         return KinematicRobot(entity)
 

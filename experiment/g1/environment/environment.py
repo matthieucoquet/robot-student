@@ -49,6 +49,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
 class TrackerEnvironmentFactory(EnvironmentFactory):
     is_29_dof: bool = True
     random_reference_sampling: bool = True
+    show_reference_motion: bool = False
 
     def create_environment(
         self,
@@ -115,4 +116,5 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
             key_link_names=key_link_names,
             target_steps=[1, 2, 3],
             random_reference_sampling=self.random_reference_sampling,
+            show_reference_motion=self.show_reference_motion,
         )

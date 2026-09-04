@@ -92,6 +92,8 @@ class Evaluation:
 
             try:
                 for _ in range(450):
+                    if not self.environment_factory.headless and not self._engine.is_viewer_alive():
+                        break
                     action = policy.sample_action(observation, stochastic=True)
                     _, _, terminal, truncated, _ = self._environment.step(action)
 

@@ -108,9 +108,26 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         target_steps: Sequence[float],
         random_reference_sampling: bool = False,
         maximum_episode_steps: int = 1_000,
+        show_reference_motion: bool = False,
     ) -> None:
-        control_timestep = 1 / control_frequency
-        self._reference_robot = ReferenceRobot(environment_count, motion_library, control_timestep, engine.device)
+
+        self._kinematic_robot = None
+        self._show_reference_motion = show_reference_motion
+        if self._show_reference_motion:
+            self._kinematic_robot = engine.add_kinematic_robot(
+                xml_path,
+                position_offset=(0.0, 0.0, 0.0),
+                color=(0.15, 0.55, 1.0, 0.7),
+                name="reference_robot",
+            )
+
+        self._reference_robot = ReferenceRobot(
+            environment_count,
+            motion_library,
+            engine.time_step,
+            engine.device,
+            kinematic_robot=self._kinematic_robot,
+        )
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=engine.device)
         self._random_reference_sampling = random_reference_sampling
 
@@ -172,14 +189,19 @@ class MotionTrackingEnvironment(CharacterEnvironment):
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         self._robot.apply_control(action["control"].detach())
-        for _ in range(self._simulation_steps_per_control_step):
-            self._engine.step()
+        if self._show_reference_motion:
+            for _ in range(self._simulation_steps_per_control_step):
+                reference_state, motion_finished = self._reference_robot.step(1)
+                self._engine.step()
+        else:
+            for _ in range(self._simulation_steps_per_control_step):
+                self._engine.step()
+            reference_state, motion_finished = self._reference_robot.step(self._simulation_steps_per_control_step)
 
         self._state = self._robot.get_state()
         self._episode_step_count.add_(1)
 
         observation = self._get_observation()
-        reference_state, motion_finished = self._reference_robot.get_state(self._episode_step_count)
         task_step = self._task.step(self._state, reference=reference_state)
 
         terminal = torch.logical_or(task_step.terminal, motion_finished)
@@ -194,7 +216,7 @@ class MotionTrackingEnvironment(CharacterEnvironment):
         return observation
 
     def _get_target_observation(self) -> TensorDictBase:
-        targets = self._reference_robot.get_target_states(self._episode_step_count, self._target_steps)
+        targets = self._reference_robot.get_target_states(self._simulation_steps_per_control_step, self._target_steps)
 
         inverse_headings = inverse_heading_rotation(targets.root_rotation)
         key_link_positions = targets.world_link_positions.index_select(-2, self._key_link_indices)
