@@ -1,14 +1,14 @@
 import logging
 
-from robot_student.run import Training, ProfilingConfiguration
+from robot_student.run import Training
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment import G1EnvironmentFactory
+from .environment.environment import TrackerEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = G1EnvironmentFactory(headless=True, environment_count=4096)
-    learner = get_ppo_factory(compile_models=True)
+    environment = TrackerEnvironmentFactory(headless=True, environment_count=2048)
+    learner = get_ppo_factory(motion_tracking=True, compile_models=True)
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
@@ -22,14 +22,14 @@ if __name__ == "__main__":
     # )
 
     training = Training(
-        experiment_name="g1_walking",
-        run_name="ppo",
+        experiment_name="g1_deepmimic",
+        run_name="deepmimic_jump",
         seed=0,
         use_cuda=True,
         debug_level=logging.INFO,
-        iteration_count=10_000,
-        checkpoint_interval=100,
-        metric_log_interval=10,
+        iteration_count=12_000,
+        checkpoint_interval=250,
+        metric_log_interval=25,
         environment_factory=environment,
         learner_factory=learner,
         run_storage=weights_and_biases_storage,

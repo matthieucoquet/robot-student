@@ -18,22 +18,22 @@ When using Weights & Biases for the metrics storage, first provide `WANDB_API_KE
 uv run wandb login
 ```
 
-## Train Ant
+## Train
 
-Launch the Ant PPO experiment with:
+Launch the G1 DeepMimic experiment with:
 
 ```sh
-uv run python -m experiment.ant.train
+uv run python -m experiment.g1.train_deepmimic
 ```
 
-## Evaluate Ant
+## Evaluate Policy
 
-Edit the run_id from the training run in `experiment/ant/evaluate.py`.
+Edit the run_id from the training run in `experiment/g1/evaluate.py`.
 
 Launch the evaluation with:
 
 ```sh
-uv run python -m experiment.ant.evaluate
+uv run python -m experiment.g1.evaluate
 ```
 
 ## Acknowledgements

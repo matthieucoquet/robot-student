@@ -3,6 +3,7 @@ from collections.abc import Sequence
 
 import torch
 
+from robot_student.engine.kinematic_robot import RobotState
 from robot_student.environment.character_task import CharacterTask, CharacterTaskStep
 from robot_student.util.geometry import heading_angle
 
@@ -40,28 +41,25 @@ class RunInDirectionTask(CharacterTask):
 
     def step(
         self,
-        root_position: torch.Tensor,
-        root_rotation: torch.Tensor,
-        root_velocity: torch.Tensor,
-        joint_positions: torch.Tensor,
+        state: RobotState,
         normalized_control_forces: torch.Tensor,
     ) -> CharacterTaskStep:
-        root_height = root_position[..., 2]
+        root_height = state.root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
         root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
         terminal = ~root_height_is_healthy
 
-        planar_velocity = root_velocity[..., :2]
+        planar_velocity = state.root_velocity[..., :2]
         target_velocity_error = torch.linalg.vector_norm(planar_velocity - self._target_velocity, dim=-1)
         target_velocity_reward = target_velocity_error.mul(2.0).neg_().exp_()
 
         target_height_error = root_height - self._target_height
         target_height_reward = target_height_error.clamp(max=0.0).abs_().mul_(5.0).neg_().exp_()
 
-        facing_direction_reward = torch.cos(heading_angle(root_rotation) - self._direction_heading)
+        facing_direction_reward = torch.cos(heading_angle(state.root_rotation) - self._direction_heading)
 
         control_cost = torch.mean(normalized_control_forces.square(), dim=-1)
-        pose_cost = torch.mean((joint_positions - self._default_joint_positions).square(), dim=-1)
+        pose_cost = torch.mean((state.joint_dof_positions - self._default_joint_positions).square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.1
         reward = (
             stay_alive_reward

@@ -85,14 +85,15 @@ class Evaluation:
             policy_state = checkpoint.get("policy")
             policy = self._learner.policy
             policy.load_state_dict(policy_state)
-            policy.standard_deviation = 0.01
             policy.eval()
 
             observation = self._environment.reset()
 
             try:
                 for _ in range(450):
-                    action = policy.sample_action(observation, stochastic=True)
+                    if not self.environment_factory.headless and not self._engine.is_viewer_alive():
+                        break
+                    action = policy.sample_action(observation, stochastic=False)
                     _, _, terminal, truncated, _ = self._environment.step(action)
 
                     done = torch.logical_or(terminal, truncated)

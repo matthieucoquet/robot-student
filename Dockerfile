@@ -1,5 +1,21 @@
 FROM python:3.13-slim-trixie
 
+# PyGEL loads libGL during import, including for headless training.
+# Triton and TorchInductor compile native code at runtime.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        libegl1 \
+        libgl1 \
+        libgl1-mesa-dri \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        openssh-client \
+        openssh-server \
+        tmux \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /usr/local/bin/
 
 ENV PYTHONUNBUFFERED=1 \
@@ -16,4 +32,4 @@ COPY experiment/ ./experiment/
 
 RUN uv sync --locked --no-dev
 
-CMD ["uv", "run", "python", "-m", "experiment.ant.train"]
+CMD ["uv", "run", "python", "-m", "experiment.g1.train_deepmimic"]

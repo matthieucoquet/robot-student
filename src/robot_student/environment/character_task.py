@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import torch
+
+from robot_student.engine.kinematic_robot import RobotState
 
 
 class CharacterTaskStep(NamedTuple):
@@ -13,12 +15,5 @@ class CharacterTaskStep(NamedTuple):
 
 class CharacterTask(ABC):
     @abstractmethod
-    def step(
-        self,
-        root_position: torch.Tensor,
-        root_rotation: torch.Tensor,
-        root_velocity: torch.Tensor,
-        joint_positions: torch.Tensor,
-        normalized_control_forces: torch.Tensor,
-    ) -> CharacterTaskStep:
-        """Compute reward, termination, and diagnostic metrics for one simulation step."""
+    def step(self, state: RobotState, **kwargs: Any) -> CharacterTaskStep:
+        """Compute one task step from the robot state and task-specific inputs."""
