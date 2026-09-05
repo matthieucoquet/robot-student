@@ -23,17 +23,17 @@ uv run wandb login
 Launch the Ant PPO experiment with:
 
 ```sh
-uv run python -m experiment.ant.train
+uv run python -m experiment.g1.train_ppo
 ```
 
 ## Evaluate Ant
 
-Edit the run_id from the training run in `experiment/ant/evaluate.py`.
+Edit the run_id from the training run in `experiment/g1/evaluate.py`.
 
 Launch the evaluation with:
 
 ```sh
-uv run python -m experiment.ant.evaluate
+uv run python -m experiment.g1.evaluate
 ```
 
 ## Acknowledgements
