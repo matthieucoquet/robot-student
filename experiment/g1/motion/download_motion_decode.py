@@ -14,6 +14,7 @@ while True:
             repo_type="dataset",
             allow_patterns=[
                 "samples/1.3.Basic_Gait_Category/1.3.1.Normal_Walking/**",
+                "samples/2.4.Competitive_Interaction/2.4.1.Boxing/2.4.1.2.Hook_Punch/**",
                 "samples/4.Martial_Arts/**",
                 "samples/5.Dance/**",
                 "samples/1.1.Basic_Movement_Category/1.1.1.High_Dynamic_Movement/**",

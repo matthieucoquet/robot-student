@@ -35,7 +35,7 @@ class ReferenceRobot:
             self._motion_ids.copy_(sampled_motion_ids)
             self._motion_times.copy_(sampled_motion_times)
         else:
-            self._step_count.masked_fill_(environment_indices, 0)
+            self._step_count.index_fill_(0, environment_indices, 0)
             self._motion_ids[environment_indices] = sampled_motion_ids
             self._motion_times[environment_indices] = sampled_motion_times
 

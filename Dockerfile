@@ -16,4 +16,4 @@ COPY experiment/ ./experiment/
 
 RUN uv sync --locked --no-dev
 
-CMD ["uv", "run", "python", "-m", "experiment.ant.train"]
+CMD ["uv", "run", "python", "-m", "experiment.g1.train_deepmimic"]
