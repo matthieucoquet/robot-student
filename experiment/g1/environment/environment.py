@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,8 +58,7 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
         mjcf_path, control_mode, initial_pose, initial_joint_positions = g1_configuration(self.is_29_dof)
 
         experiment_path = Path(__file__).parent.parent
-        motion_name = os.environ.get("MOTION_NAME", "BG_Normal_Walking_00001")
-        motion_path = experiment_path / "dataset" / "preprocessed" / "v1" / f"{motion_name}.pt"
+        motion_path = experiment_path / "dataset" / "preprocessed" / "v1" / "BG_Normal_Walking_00001.pt"
         if not motion_path.is_file():
             raise FileNotFoundError(f"Preprocessed motion not found: {motion_path}")
 

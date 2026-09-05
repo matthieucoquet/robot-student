@@ -1,5 +1,10 @@
 FROM python:3.13-slim-trixie
 
+# PyGEL loads libGL during import, including for headless training.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /usr/local/bin/
 
 ENV PYTHONUNBUFFERED=1 \
