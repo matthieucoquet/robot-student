@@ -4,7 +4,7 @@ from pathlib import Path
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
-from robot_student.environment.motion_tracking_environment import DeepMimicTask, MotionTrackingEnvironment
+from robot_student.environment.task.deep_mimic_task import DeepMimicTask, MotionTrackingEnvironment
 from robot_student.motion import MotionLibrary
 from robot_student.run.environment_factory import EnvironmentFactory
 

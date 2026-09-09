@@ -8,9 +8,9 @@ from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.environment.character_task import CharacterTask, CharacterTaskStep
 from robot_student.environment.robot_environment import RobotEnvironment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
+from robot_student.environment.task.task import Task, TaskStep
 from robot_student.motion import MotionLibrary, ReferenceRobot
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
 
 
-class DeepMimicTask(CharacterTask):
+class DeepMimicTask(Task):
     def __init__(self, device: torch.device, joint_reward_weight: Sequence[float]) -> None:
         super().__init__()
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
@@ -76,11 +76,11 @@ class DeepMimicTask(CharacterTask):
         state: RobotState,
         reference: RobotState,
         **_,
-    ) -> CharacterTaskStep:
+    ) -> TaskStep:
         reward, reward_components = self._compute_reward(state, reference)
         pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward = reward_components
         terminal = self._compute_terminal(state, reference)
-        return CharacterTaskStep(
+        return TaskStep(
             reward=reward,
             terminal=terminal,
             transition_metrics={
@@ -101,7 +101,7 @@ class MotionTrackingEnvironment(RobotEnvironment):
         xml_path: Path,
         environment_count: int,
         control_mode: ControlMode,
-        task: CharacterTask,
+        task: Task,
         control_frequency: int,
         initial_pose: Sequence[float],
         key_link_names: Sequence[str],

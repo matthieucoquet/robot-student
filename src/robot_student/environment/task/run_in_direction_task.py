@@ -4,11 +4,11 @@ from collections.abc import Sequence
 import torch
 
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.environment.character_task import CharacterTask, CharacterTaskStep
+from robot_student.environment.task.task import Task, TaskStep
 from robot_student.util.geometry import heading_angle
 
 
-class RunInDirectionTask(CharacterTask):
+class RunInDirectionTask(Task):
     def __init__(
         self,
         device: torch.device,
@@ -43,7 +43,7 @@ class RunInDirectionTask(CharacterTask):
         self,
         state: RobotState,
         normalized_control_forces: torch.Tensor,
-    ) -> CharacterTaskStep:
+    ) -> TaskStep:
         root_height = state.root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
         root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
@@ -70,7 +70,7 @@ class RunInDirectionTask(CharacterTask):
             - self._pose_cost_weight * pose_cost
         )
 
-        return CharacterTaskStep(
+        return TaskStep(
             reward=reward,
             terminal=terminal,
             transition_metrics={

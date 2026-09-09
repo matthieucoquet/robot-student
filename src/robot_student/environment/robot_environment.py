@@ -8,9 +8,9 @@ from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.environment.character_task import CharacterTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
+from robot_student.environment.task.task import Task
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d
 
 if TYPE_CHECKING:
@@ -24,7 +24,7 @@ class RobotEnvironment(Environment):
         xml_path: Path,
         environment_count: int,
         control_mode: ControlMode,
-        task: CharacterTask,
+        task: Task,
         control_frequency: int,
         initial_pose: Sequence[float],
         key_link_names: Sequence[str] = (),

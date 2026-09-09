@@ -7,13 +7,13 @@ import torch
 from robot_student.engine.kinematic_robot import RobotState
 
 
-class CharacterTaskStep(NamedTuple):
+class TaskStep(NamedTuple):
     reward: torch.Tensor
     terminal: torch.Tensor
     transition_metrics: Mapping[str, torch.Tensor]
 
 
-class CharacterTask(ABC):
+class Task(ABC):
     @abstractmethod
-    def step(self, state: RobotState, **kwargs: Any) -> CharacterTaskStep:
+    def step(self, state: RobotState, **kwargs: Any) -> TaskStep:
         """Compute one task step from the robot state and task-specific inputs."""
