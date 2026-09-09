@@ -8,8 +8,8 @@ from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.environment.character_environment import CharacterEnvironment
 from robot_student.environment.character_task import CharacterTask, CharacterTaskStep
+from robot_student.environment.robot_environment import RobotEnvironment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
 from robot_student.motion import MotionLibrary, ReferenceRobot
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
@@ -93,7 +93,7 @@ class DeepMimicTask(CharacterTask):
         )
 
 
-class MotionTrackingEnvironment(CharacterEnvironment):
+class MotionTrackingEnvironment(RobotEnvironment):
     def __init__(
         self,
         engine: "GenesisEngine",

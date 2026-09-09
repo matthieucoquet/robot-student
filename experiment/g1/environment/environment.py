@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
-from robot_student.environment import CharacterEnvironment, RunInDirectionTask
+from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.motion_tracking_environment import DeepMimicTask, MotionTrackingEnvironment
 from robot_student.motion import MotionLibrary
@@ -34,7 +34,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             pose_cost_weight=0.5,
         )
 
-        return CharacterEnvironment(
+        return RobotEnvironment(
             engine,
             mjcf_path,
             environment_count=self.environment_count,

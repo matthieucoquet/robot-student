@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
 
 
-class CharacterEnvironment(Environment):
+class RobotEnvironment(Environment):
     def __init__(
         self,
         engine: "GenesisEngine",
