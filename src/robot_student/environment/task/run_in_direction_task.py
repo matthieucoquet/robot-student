@@ -4,7 +4,9 @@ from collections.abc import Sequence
 import torch
 
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.environment.task.task import Task, TaskStep
+from robot_student.engine.robot import Robot
+from robot_student.environment.schema import TensorSchema
+from robot_student.environment.task.task import Task, TaskFeedback
 from robot_student.util.geometry import heading_angle
 
 
@@ -39,11 +41,30 @@ class RunInDirectionTask(Task):
         self._default_joint_positions = torch.tensor(default_joint_positions, device=device, dtype=torch.float32)
         self._minimum_healthy_height, self._maximum_healthy_height = height_range
 
-    def step(
+    def get_schema(self) -> dict[str, TensorSchema]:
+        return {}
+
+    def initialize(
+        self,
+        *,
+        robot: Robot,
+        key_link_indices: torch.Tensor,
+        simulation_steps_per_control_step: int,
+        global_observation: bool,
+    ) -> None:
+        pass
+
+    def reset(self, environment_indices: torch.Tensor) -> None:
+        pass
+
+    def observation(self, robot_state: RobotState) -> dict[str, torch.Tensor]:
+        return {}
+
+    def compute_feedback(
         self,
         state: RobotState,
         normalized_control_forces: torch.Tensor,
-    ) -> TaskStep:
+    ) -> TaskFeedback:
         root_height = state.root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
         root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
@@ -70,7 +91,7 @@ class RunInDirectionTask(Task):
             - self._pose_cost_weight * pose_cost
         )
 
-        return TaskStep(
+        return TaskFeedback(
             reward=reward,
             terminal=terminal,
             transition_metrics={

@@ -57,10 +57,17 @@ class RobotEnvironment(Environment):
         self._robot.set_default_pose(batched_initial_pose)
         self._engine.register_initial_pose()
 
+        self._global_observation = True
+        self._task.initialize(
+            robot=self._robot,
+            key_link_indices=self._key_link_indices,
+            simulation_steps_per_control_step=self._simulation_steps_per_control_step,
+            global_observation=self._global_observation,
+        )
+
         self._schema = self._compute_schema()
         self._maximum_episode_steps = maximum_episode_steps
         self._episode_step_count = torch.zeros(environment_count, device=device, dtype=torch.int64)
-        self._global_observation = True
         self._state: RobotState = self._robot.get_state()
 
     @property
@@ -76,23 +83,28 @@ class RobotEnvironment(Environment):
         return self._schema
 
     def reset(self) -> TensorDictBase:
-        self._engine.reset()
-        self._engine.reset_recording_camera()
-
         self._episode_step_count.zero_()
+
+        self._engine.reset()
+        self._task.reset(environment_indices=torch.arange(self._count, device=self.device, dtype=torch.int64))
+        self._engine.reset_recording_camera()
 
         self._state = self._robot.get_state()
         return self._get_observation()
 
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
-        # TODO need to profile to see if this is a bottleneck
-        # Could optimize or do some kind of manual reset when doing some deep-mimic style learning
-        environment_indices = done.reshape(-1)
-        self._engine.reset(environment_indices=environment_indices)
-        self._engine.reset_recording_camera(environment_indices)
-        self._episode_step_count.masked_fill_(done, 0)
+        environment_indices = done.reshape(-1).nonzero().reshape(-1)
 
-        self._state = self._robot.get_state()
+        if environment_indices.numel() > 0:
+            # TODO need to profile to see if this is a bottleneck
+            # For tracker, calling the engine reset might not be needed.
+            self._engine.reset(environment_indices=environment_indices)
+            self._task.reset(environment_indices)
+            reset_state = self._robot.get_state(environment_indices=environment_indices)
+            self._state.copy_environments_(environment_indices, reset_state)
+
+            self._engine.reset_recording_camera(environment_indices)
+            self._episode_step_count.masked_fill_(done, 0)
         return self._get_observation()
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
@@ -100,33 +112,35 @@ class RobotEnvironment(Environment):
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
         normalized_control_forces = self._robot.get_normalized_control_forces()
-        for _ in range(self._simulation_steps_per_control_step):
+        for i in range(self._simulation_steps_per_control_step):
+            self._task.step(is_control_step=i == 0)
             self._engine.step()
 
         self._state = self._robot.get_state()
-        observation = self._get_observation()
-        task_step = self._task.step(
+        self._episode_step_count.add_(1)
+        task_feedback = self._task.compute_feedback(
             self._state,
             normalized_control_forces=normalized_control_forces,
         )
 
-        self._episode_step_count.add_(1)
         truncated = self._episode_step_count >= self._maximum_episode_steps
 
-        return observation, task_step.reward, task_step.terminal, truncated, task_step.transition_metrics
+        return self._get_observation(), task_feedback.reward, task_feedback.terminal, truncated, task_feedback.transition_metrics
 
     def _compute_schema(self) -> EnvironmentSchema:
-        observation_type = torch.float32
         root_observation_size = 1 + 6 + 3 + 3
         key_link_position_size = 3 * self._key_link_indices.numel()
         proprioception_size = root_observation_size + 2 * self._robot.n_joint_dofs + key_link_position_size
+
+        task_schema = self._task.get_schema()
 
         return EnvironmentSchema(
             observations={
                 "proprioception": TensorSchema(
                     shape=(proprioception_size,),
-                    data_type=observation_type,
-                )
+                    data_type=torch.float32,
+                ),
+                **task_schema,
             },
             actions={"control": self._get_control_schema()},
         )
@@ -140,9 +154,12 @@ class RobotEnvironment(Environment):
         )
 
     def _get_observation(self) -> TensorDictBase:
-        return self._get_character_observation()
+        robot_observation = self._get_robot_observation()
+        task_observation = self._task.observation(self._state)
+        robot_observation.update(task_observation)
+        return robot_observation
 
-    def _get_character_observation(self) -> TensorDictBase:
+    def _get_robot_observation(self) -> TensorDictBase:
         root_position = self._state.root_position
         root_rotation = self._state.root_rotation
         root_velocity = self._state.root_velocity

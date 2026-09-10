@@ -4,7 +4,7 @@ from pathlib import Path
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
-from robot_student.environment.task.deep_mimic_task import DeepMimicTask, MotionTrackingEnvironment
+from robot_student.environment.task.deep_mimic_task import DeepMimicTask
 from robot_student.motion import MotionLibrary
 from robot_student.run.environment_factory import EnvironmentFactory
 
@@ -107,11 +107,20 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
             # "right_elbow_link",
         )
 
-        task = DeepMimicTask(device=engine.device, joint_reward_weight=joint_reward_weight)
-
-        return MotionTrackingEnvironment(
-            engine,
+        task = DeepMimicTask(
+            engine=engine,
+            environment_count=self.environment_count,
+            xml_path=mjcf_path,
             motion_library=motion_library,
+            target_steps=[1, 2, 3],
+            joint_reward_weight=joint_reward_weight,
+            random_reference_sampling=self.random_reference_sampling,
+            show_reference_motion=self.show_reference_motion,
+            reference_motion_offset=self.reference_motion_offset,
+        )
+
+        return RobotEnvironment(
+            engine,
             xml_path=mjcf_path,
             environment_count=self.environment_count,
             control_mode=control_mode,
@@ -119,8 +128,4 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
             key_link_names=key_link_names,
-            target_steps=[1, 2, 3],
-            random_reference_sampling=self.random_reference_sampling,
-            show_reference_motion=self.show_reference_motion,
-            reference_motion_offset=self.reference_motion_offset,
         )
