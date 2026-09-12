@@ -57,7 +57,7 @@ class RunInDirectionTask(Task):
     def reset(self, environment_indices: torch.Tensor) -> None:
         pass
 
-    def observation(self, robot_state: RobotState) -> dict[str, torch.Tensor]:
+    def observation(self, robot_state: RobotState, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
         return {}
 
     def compute_feedback(

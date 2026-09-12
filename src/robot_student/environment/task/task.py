@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
 
 from robot_student.engine.kinematic_robot import RobotState
 from robot_student.engine.robot import Robot
 from robot_student.environment.schema import TensorSchema
+
+if TYPE_CHECKING:
+    from robot_student.engine.genesis_engine import GenesisEngine
 
 
 class TaskFeedback(NamedTuple):
@@ -16,6 +19,10 @@ class TaskFeedback(NamedTuple):
 
 
 class Task(ABC):
+    def setup_scene(self, engine: "GenesisEngine") -> None:
+        """Add task entities once, after the controlled robot is added and before the environment builds the scene."""
+        return None
+
     @abstractmethod
     def get_schema(self) -> dict[str, TensorSchema]:
         """Return schemas for task observations, excluding the environment batch dimensions."""
@@ -44,5 +51,5 @@ class Task(ABC):
         """Compute reward, termination, and metrics from the robot state and task-specific inputs."""
 
     @abstractmethod
-    def observation(self, robot_state: RobotState) -> dict[str, torch.Tensor]:
-        """Return the observation specific to the task."""
+    def observation(self, robot_state: RobotState, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Return task observations. previous_action is a read-only buffer, zero on reset; clone it if returning it directly."""

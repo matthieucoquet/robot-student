@@ -26,6 +26,7 @@ class EnvironmentFactory(ABC):
             show_viewer=not self.headless,
             seed=seed,
             simulation_frequency=self.simulation_frequency,
+            environment_count=self.environment_count,
         )
         return engine
 

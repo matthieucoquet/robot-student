@@ -4,6 +4,7 @@ from pathlib import Path
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
+from robot_student.environment.task.beyond_mimic_task import BeyondMimicTask
 from robot_student.environment.task.deep_mimic_task import DeepMimicTask
 from robot_student.motion import MotionLibrary
 from robot_student.run.environment_factory import EnvironmentFactory
@@ -37,7 +38,6 @@ class PPOEnvironmentFactory(EnvironmentFactory):
         return RobotEnvironment(
             engine,
             mjcf_path,
-            environment_count=self.environment_count,
             control_mode=control_mode,
             task=task,
             control_frequency=self.control_frequency,
@@ -46,7 +46,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class TrackerEnvironmentFactory(EnvironmentFactory):
+class DeepMimicEnvironmentFactory(EnvironmentFactory):
     is_29_dof: bool = True
     random_reference_sampling: bool = True
     show_reference_motion: bool = False
@@ -108,8 +108,8 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
         )
 
         task = DeepMimicTask(
-            engine=engine,
-            environment_count=self.environment_count,
+            device=engine.device,
+            environment_count=engine.environment_count,
             xml_path=mjcf_path,
             motion_library=motion_library,
             target_steps=[1, 2, 3],
@@ -122,7 +122,69 @@ class TrackerEnvironmentFactory(EnvironmentFactory):
         return RobotEnvironment(
             engine,
             xml_path=mjcf_path,
-            environment_count=self.environment_count,
+            control_mode=control_mode,
+            task=task,
+            control_frequency=self.control_frequency,
+            initial_pose=initial_pose,
+            key_link_names=key_link_names,
+        )
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class BeyondMimicEnvironmentFactory(EnvironmentFactory):
+    is_29_dof: bool = True
+    random_reference_sampling: bool = True
+    show_reference_motion: bool = False
+    reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    control_frequency: int = 50
+    simulation_frequency: int = 200
+
+    def create_environment(
+        self,
+        engine: GenesisEngine,
+    ) -> Environment:
+        mjcf_path, control_mode, initial_pose, initial_joint_positions = g1_configuration(self.is_29_dof)
+
+        experiment_path = Path(__file__).parent.parent
+        motion_path = experiment_path / "dataset" / "preprocessed" / "v1" / "BG_Normal_Walking_00001.pt"
+        if not motion_path.is_file():
+            raise FileNotFoundError(f"Preprocessed motion not found: {motion_path}")
+
+        motion_library = MotionLibrary([motion_path], device=engine.device)
+
+        anchor_link_name = "torso_link"
+        key_link_names = (
+            "pelvis",
+            "left_hip_roll_link",
+            "left_knee_link",
+            "left_ankle_roll_link",
+            "right_hip_roll_link",
+            "right_knee_link",
+            "right_ankle_roll_link",
+            "torso_link",
+            "left_shoulder_roll_link",
+            "left_elbow_link",
+            "left_wrist_yaw_link",
+            "right_shoulder_roll_link",
+            "right_elbow_link",
+            "right_wrist_yaw_link",
+        )
+
+        task = BeyondMimicTask(
+            # engine=engine,
+            xml_path=mjcf_path,
+            motion_library=motion_library,
+            # target_steps=[1, 2, 3],
+            # joint_reward_weight=joint_reward_weight,
+            # random_reference_sampling=self.random_reference_sampling,
+            show_reference_motion=self.show_reference_motion,
+            reference_motion_offset=self.reference_motion_offset,
+            anchor_link_name=anchor_link_name,
+        )
+
+        return RobotEnvironment(
+            engine,
+            xml_path=mjcf_path,
             control_mode=control_mode,
             task=task,
             control_frequency=self.control_frequency,

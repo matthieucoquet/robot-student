@@ -31,10 +31,11 @@ class MotionClipPlayer:
             show_viewer=True,
             seed=self.seed,
             simulation_frequency=motion_clip.frequency,
+            environment_count=1,
         )
         engine.add_ground_plane()
         robot = engine.add_kinematic_robot(self.robot_path)
-        engine.build_scene(environment_count=1)
+        engine.build_scene()
         engine.follow_robot(robot)
 
         frames = motion_clip.frames.to(engine.device)

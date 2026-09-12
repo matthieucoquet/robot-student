@@ -23,11 +23,13 @@ class GenesisEngine:
         show_viewer: bool = True,
         seed: int | None = None,
         simulation_frequency: int = 120,
+        environment_count: int = 1,
     ) -> None:
         super().__init__()
 
         gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
 
+        self.environment_count = environment_count
         self.simulation_frequency = simulation_frequency
         self.time_step = 1.0 / simulation_frequency
         self._scene = gs.Scene(
@@ -122,8 +124,8 @@ class GenesisEngine:
             return
         self._scene.stop_recording()
 
-    def build_scene(self, environment_count: int = 1, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
-        self._scene.build(n_envs=environment_count, env_spacing=env_spacing)
+    def build_scene(self, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
+        self._scene.build(n_envs=self.environment_count, env_spacing=env_spacing)
         for robot in self.robots:
             robot.configure_control_mode()
 

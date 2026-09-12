@@ -3,11 +3,11 @@ import logging
 from robot_student.run import Training
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment.environment import DeepMimicEnvironmentFactory
+from .environment.environment import BeyondMimicEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = DeepMimicEnvironmentFactory(headless=True, environment_count=2048)
+    environment = BeyondMimicEnvironmentFactory(headless=True, environment_count=2048)
     learner = get_ppo_factory(motion_tracking=True, compile_models=True)
 
     weights_and_biases_storage = WeightsAndBiasesStorage()

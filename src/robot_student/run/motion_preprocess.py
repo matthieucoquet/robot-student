@@ -82,10 +82,11 @@ class MotionPreprocess:
             show_viewer=not self.headless,
             seed=self.seed,
             simulation_frequency=self.simulation_frequency,
+            environment_count=1,
         )
         self._engine.add_ground_plane()
         self._kinematic_robot = self._engine.add_kinematic_robot(self.robot_path)
-        self._engine.build_scene(environment_count=1, env_spacing=(1.0, 1.0))
+        self._engine.build_scene(env_spacing=(1.0, 1.0))
 
     @torch.inference_mode()
     def run(self) -> None:
@@ -113,10 +114,20 @@ class MotionPreprocess:
             dtype=generalized_states.root_position.dtype,
             device="cpu",
         )
+        world_link_rotations = torch.empty(
+            (raw_motion.frame_count, self._kinematic_robot.n_links, 4),
+            dtype=generalized_states.root_rotation.dtype,
+            device="cpu",
+        )
+        world_link_linear_velocities = torch.empty_like(world_link_positions)
+        world_link_angular_velocities = torch.empty_like(world_link_positions)
 
         for frame_index in range(raw_motion.frame_count):
             state = self._kinematic_robot.set_state(generalized_states[frame_index])
             world_link_positions[frame_index].copy_(state.world_link_positions[0])
+            world_link_rotations[frame_index].copy_(state.world_link_rotations[0])
+            world_link_linear_velocities[frame_index].copy_(state.world_link_linear_velocities[0])
+            world_link_angular_velocities[frame_index].copy_(state.world_link_angular_velocities[0])
 
         frames = RobotState(
             root_position=generalized_states.root_position,
@@ -126,6 +137,9 @@ class MotionPreprocess:
             root_angular_velocity=generalized_states.root_angular_velocity,
             joint_dof_velocities=generalized_states.joint_dof_velocities,
             world_link_positions=world_link_positions,
+            world_link_rotations=world_link_rotations,
+            world_link_linear_velocities=world_link_linear_velocities,
+            world_link_angular_velocities=world_link_angular_velocities,
             batch_size=generalized_states.batch_size,
         )
         return MotionClip(frequency=raw_motion.frequency, frames=frames.cpu())

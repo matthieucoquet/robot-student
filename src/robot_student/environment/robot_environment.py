@@ -22,7 +22,6 @@ class RobotEnvironment(Environment):
         self,
         engine: "GenesisEngine",
         xml_path: Path,
-        environment_count: int,
         control_mode: ControlMode,
         task: Task,
         control_frequency: int,
@@ -30,7 +29,6 @@ class RobotEnvironment(Environment):
         key_link_names: Sequence[str] = (),
         maximum_episode_steps: int = 1_000,
     ) -> None:
-        self._count = environment_count
         self._engine = engine
         self._task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
@@ -43,7 +41,8 @@ class RobotEnvironment(Environment):
             dtype=torch.int64,
             device=device,
         )
-        self._engine.build_scene(environment_count=environment_count, env_spacing=(2.0, 2.0))
+        self._task.setup_scene(engine)
+        self._engine.build_scene(env_spacing=(2.0, 2.0))
 
         initial_pose_tensor = torch.tensor(
             initial_pose,
@@ -53,7 +52,7 @@ class RobotEnvironment(Environment):
         expected_shape = (self._robot.n_qs,)
         if initial_pose_tensor.shape != expected_shape:
             raise ValueError(f"initial_pose must have shape {expected_shape}, got {tuple(initial_pose_tensor.shape)}")
-        batched_initial_pose = initial_pose_tensor.expand(environment_count, -1).contiguous()
+        batched_initial_pose = initial_pose_tensor.expand(engine.environment_count, -1).contiguous()
         self._robot.set_default_pose(batched_initial_pose)
         self._engine.register_initial_pose()
 
@@ -67,7 +66,12 @@ class RobotEnvironment(Environment):
 
         self._schema = self._compute_schema()
         self._maximum_episode_steps = maximum_episode_steps
-        self._episode_step_count = torch.zeros(environment_count, device=device, dtype=torch.int64)
+        self._episode_step_count = torch.zeros(self.count, device=device, dtype=torch.int64)
+        self._previous_action = torch.zeros(
+            (self.count, self._robot.n_controlled_dofs),
+            device=device,
+            dtype=self._robot.default_control.dtype,
+        )
         self._state: RobotState = self._robot.get_state()
 
     @property
@@ -76,7 +80,7 @@ class RobotEnvironment(Environment):
 
     @property
     def count(self) -> int:
-        return self._count
+        return self._engine.environment_count
 
     @property
     def schema(self) -> EnvironmentSchema:
@@ -84,9 +88,10 @@ class RobotEnvironment(Environment):
 
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
+        self._previous_action.zero_()
 
         self._engine.reset()
-        self._task.reset(environment_indices=torch.arange(self._count, device=self.device, dtype=torch.int64))
+        self._task.reset(environment_indices=torch.arange(self._engine.environment_count, device=self.device, dtype=torch.int64))
         self._engine.reset_recording_camera()
 
         self._state = self._robot.get_state()
@@ -105,6 +110,7 @@ class RobotEnvironment(Environment):
 
             self._engine.reset_recording_camera(environment_indices)
             self._episode_step_count.masked_fill_(done, 0)
+            self._previous_action.index_fill_(0, environment_indices, 0)
         return self._get_observation()
 
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
@@ -124,6 +130,7 @@ class RobotEnvironment(Environment):
         )
 
         truncated = self._episode_step_count >= self._maximum_episode_steps
+        self._previous_action.copy_(action["control"].detach())
 
         return self._get_observation(), task_feedback.reward, task_feedback.terminal, truncated, task_feedback.transition_metrics
 
@@ -155,7 +162,7 @@ class RobotEnvironment(Environment):
 
     def _get_observation(self) -> TensorDictBase:
         robot_observation = self._get_robot_observation()
-        task_observation = self._task.observation(self._state)
+        task_observation = self._task.observation(self._state, previous_action=self._previous_action)
         robot_observation.update(task_observation)
         return robot_observation
 

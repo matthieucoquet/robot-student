@@ -5,19 +5,18 @@ from typing import Any
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
 
-from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.engine.kinematic_robot import RobotState
-from robot_student.engine.robot import Robot
-from robot_student.environment.schema import EnvironmentSchema, TensorSchema
-from robot_student.environment.task.task import Task, TaskFeedback
-from robot_student.motion import MotionLibrary, ReferenceRobot
+from robot_student.environment.schema import TensorSchema
+from robot_student.environment.task.motion_tracking_task import MotionTrackingTask
+from robot_student.environment.task.task import TaskFeedback
+from robot_student.motion import MotionLibrary
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
 
 
-class DeepMimicTask(Task):
+class DeepMimicTask(MotionTrackingTask):
     def __init__(
         self,
-        engine: GenesisEngine,
+        device: torch.device,
         environment_count: int,
         xml_path: Path,
         motion_library: MotionLibrary,
@@ -27,44 +26,21 @@ class DeepMimicTask(Task):
         show_reference_motion: bool = False,
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
     ) -> None:
-        super().__init__()
-
-        self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=engine.device)
-        self._random_reference_sampling = random_reference_sampling
-
-        self._kinematic_robot = None
-        self._show_reference_motion = show_reference_motion
-        if self._show_reference_motion:
-            self._kinematic_robot = engine.add_kinematic_robot(
-                xml_path,
-                position_offset=(0.0, 0.0, 0.0),
-                color=(0.15, 0.55, 1.0, 0.7),
-                name="reference_robot",
-            )
-
-        self._reference_robot = ReferenceRobot(
-            environment_count,
-            motion_library,
-            engine.time_step,
-            engine.device,
-            kinematic_robot=self._kinematic_robot,
-            display_offset=reference_motion_offset,
+        super().__init__(
+            xml_path=xml_path,
+            motion_library=motion_library,
+            show_reference_motion=show_reference_motion,
+            reference_motion_offset=reference_motion_offset,
         )
 
-        self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=engine.device)
-
-    def initialize(
-        self,
-        *,
-        robot: Robot,
-        key_link_indices: torch.Tensor,
-        simulation_steps_per_control_step: int,
-        global_observation: bool,
-    ) -> None:
-        self._robot = robot
-        self._key_link_indices = key_link_indices
-        self._simulation_steps_per_control_step = simulation_steps_per_control_step
-        self._global_observation = global_observation
+        self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
+        self._random_reference_sampling = random_reference_sampling
+        self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
+        self._reference_state = motion_library.get_state(
+            torch.zeros(environment_count, dtype=torch.int64, device=device),
+            torch.zeros(environment_count, dtype=torch.float32, device=device),
+        )
+        self._motion_finished = torch.zeros(environment_count, dtype=torch.bool, device=device)
 
     def reset(self, environment_indices: torch.Tensor) -> None:
         reference_state = self._reference_robot.reset(
@@ -72,6 +48,8 @@ class DeepMimicTask(Task):
             environment_indices=environment_indices,
         )
         self._robot.set_state(reference_state, environment_indices=environment_indices)
+        self._reference_state.copy_environments_(environment_indices, reference_state)
+        self._motion_finished.index_fill_(0, environment_indices, False)
 
     def get_schema(self) -> dict[str, TensorSchema]:
         key_link_position_size = 3 * self._key_link_indices.numel()
@@ -85,7 +63,7 @@ class DeepMimicTask(Task):
             )
         }
 
-    def observation(self, robot_state: RobotState) -> dict[str, torch.Tensor]:
+    def observation(self, robot_state: RobotState, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
         targets = self._reference_robot.get_target_states(self._simulation_steps_per_control_step, self._target_steps)
 
         key_link_positions = targets.world_link_positions.index_select(-2, self._key_link_indices)

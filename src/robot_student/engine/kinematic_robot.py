@@ -25,10 +25,16 @@ class GeneralizedRobotState(TensorClass["autocast"]):
 
 class RobotState(GeneralizedRobotState):
     world_link_positions: torch.Tensor
+    world_link_rotations: torch.Tensor  # wxyz quaternions
+    world_link_linear_velocities: torch.Tensor
+    world_link_angular_velocities: torch.Tensor
 
     def copy_environments_(self, environment_indices: torch.Tensor, source: "RobotState") -> None:
         GeneralizedRobotState.copy_environments_(self, environment_indices, source)
         self.world_link_positions.index_copy_(0, environment_indices, source.world_link_positions)
+        self.world_link_rotations.index_copy_(0, environment_indices, source.world_link_rotations)
+        self.world_link_linear_velocities.index_copy_(0, environment_indices, source.world_link_linear_velocities)
+        self.world_link_angular_velocities.index_copy_(0, environment_indices, source.world_link_angular_velocities)
 
 
 class KinematicRobot:
@@ -78,6 +84,9 @@ class KinematicRobot:
             root_angular_velocity=self._entity.get_ang(envs_idx=environment_indices),
             joint_dof_velocities=generalized_velocities[..., self.n_root_dofs :],
             world_link_positions=self._entity.get_links_pos(envs_idx=environment_indices, relative=False),
+            world_link_rotations=self._entity.get_links_quat(envs_idx=environment_indices, relative=False),
+            world_link_linear_velocities=self._entity.get_links_vel(envs_idx=environment_indices),
+            world_link_angular_velocities=self._entity.get_links_ang(envs_idx=environment_indices),
             batch_size=generalized_positions.shape[:-1],
         )
 
@@ -138,5 +147,8 @@ class KinematicRobot:
             root_angular_velocity=state.root_angular_velocity,
             joint_dof_velocities=state.joint_dof_velocities,
             world_link_positions=self.get_links_position(environment_indices=environment_indices),
+            world_link_rotations=self.get_links_rotation(environment_indices=environment_indices),
+            world_link_linear_velocities=self._entity.get_links_vel(envs_idx=environment_indices),
+            world_link_angular_velocities=self._entity.get_links_ang(envs_idx=environment_indices),
             batch_size=state.batch_size,
         )

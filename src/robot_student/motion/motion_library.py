@@ -64,6 +64,16 @@ class MotionLibrary:
             root_angular_velocity=torch.lerp(first_frame.root_angular_velocity, second_frame.root_angular_velocity, blend),
             joint_dof_velocities=torch.lerp(first_frame.joint_dof_velocities, second_frame.joint_dof_velocities, blend),
             world_link_positions=torch.lerp(first_frame.world_link_positions, second_frame.world_link_positions, link_blend),
-            # link_rotations=slerp(first_frame.link_rotations, second_frame.link_rotations, link_blend),
+            world_link_rotations=slerp(
+                first_frame.world_link_rotations,
+                second_frame.world_link_rotations,
+                link_blend.expand_as(first_frame.world_link_rotations[..., :1]),
+            ),
+            world_link_linear_velocities=torch.lerp(
+                first_frame.world_link_linear_velocities, second_frame.world_link_linear_velocities, link_blend
+            ),
+            world_link_angular_velocities=torch.lerp(
+                first_frame.world_link_angular_velocities, second_frame.world_link_angular_velocities, link_blend
+            ),
             batch_size=time.shape,
         )
