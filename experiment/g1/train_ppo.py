@@ -8,7 +8,11 @@ from .learner import get_ppo_factory
 
 if __name__ == "__main__":
     environment = PPOEnvironmentFactory(headless=True, environment_count=4096)
-    learner = get_ppo_factory(compile_models=True)
+    learner = get_ppo_factory(
+        actor_observation_keys=("proprioception",),
+        critic_observation_keys=("proprioception",),
+        compile_models=True,
+    )
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 

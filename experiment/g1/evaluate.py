@@ -14,7 +14,10 @@ if __name__ == "__main__":
         show_reference_motion=True,
         reference_motion_offset=(0.0, 1.0, 0.0),
     )
-    learner = get_ppo_factory(motion_tracking=True)
+    learner = get_ppo_factory(
+        actor_observation_keys=("proprioception", "target"),
+        critic_observation_keys=("proprioception", "target"),
+    )
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
+from robot_student.engine.robot_state import NoiseConfiguration, UniformNoise
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.task.beyond_mimic_task import BeyondMimicTask
@@ -170,13 +171,18 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             "right_wrist_yaw_link",
         )
 
+        robot_state_noise = NoiseConfiguration(
+            root_velocity=UniformNoise(half_width=0.5),
+            root_angular_velocity=UniformNoise(half_width=0.2),
+            joint_dof_positions=UniformNoise(half_width=0.01),
+            joint_dof_velocities=UniformNoise(half_width=0.5),
+            world_link_positions=UniformNoise(half_width=0.25),
+            world_link_rotations=UniformNoise(half_width=0.05),
+        )
+
         task = BeyondMimicTask(
-            # engine=engine,
             xml_path=mjcf_path,
             motion_library=motion_library,
-            # target_steps=[1, 2, 3],
-            # joint_reward_weight=joint_reward_weight,
-            # random_reference_sampling=self.random_reference_sampling,
             show_reference_motion=self.show_reference_motion,
             reference_motion_offset=self.reference_motion_offset,
             anchor_link_name=anchor_link_name,
@@ -190,4 +196,5 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
             key_link_names=key_link_names,
+            noise_configuration=robot_state_noise,
         )

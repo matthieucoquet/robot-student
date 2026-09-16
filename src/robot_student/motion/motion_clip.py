@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from robot_student.engine.kinematic_robot import RobotState
+from robot_student.engine.robot_state import RobotState
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

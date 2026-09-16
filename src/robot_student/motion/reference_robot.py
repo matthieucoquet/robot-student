@@ -1,6 +1,7 @@
 import torch
 
-from robot_student.engine.kinematic_robot import KinematicRobot, RobotState
+from robot_student.engine.kinematic_robot import KinematicRobot
+from robot_student.engine.robot_state import RobotState
 from robot_student.motion.motion_library import MotionLibrary
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 
 from robot_student.engine.genesis_engine import GenesisEngine
-from robot_student.engine.kinematic_robot import GeneralizedRobotState, RobotState
+from robot_student.engine.robot_state import GeneralizedRobotState, RobotState
 from robot_student.motion.motion_clip import MotionClip
 from robot_student.util.geometry import quat_angular_displacement
 from robot_student.util.logging import configure_logging

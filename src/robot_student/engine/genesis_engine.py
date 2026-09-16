@@ -6,6 +6,7 @@ import torch
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.kinematic_robot import KinematicRobot
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_state import NoiseConfiguration
 
 
 class _MjcfCompatibleKinematicOptions(gs.options.KinematicOptions):
@@ -47,9 +48,9 @@ class GenesisEngine:
     def device(self) -> torch.device:
         return gs.device
 
-    def add_robot(self, xml_path: Path, control_mode: ControlMode) -> Robot:
+    def add_robot(self, xml_path: Path, control_mode: ControlMode, *, noise_configuration: NoiseConfiguration | None = None) -> Robot:
         entity = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
-        robot = Robot(entity, control_mode=control_mode)
+        robot = Robot(entity, control_mode=control_mode, noise_configuration=noise_configuration)
         self.robots.append(robot)
 
         if self._recording_camera is not None:

@@ -8,7 +8,11 @@ from .learner import get_ppo_factory
 
 if __name__ == "__main__":
     environment = BeyondMimicEnvironmentFactory(headless=True, environment_count=2048)
-    learner = get_ppo_factory(motion_tracking=True, compile_models=True)
+    learner = get_ppo_factory(
+        actor_observation_keys=["actor"],
+        critic_observation_keys=["critic"],
+        compile_models=True,
+    )
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 

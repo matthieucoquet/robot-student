@@ -8,16 +8,19 @@ from robot_student.model.action import ActionBoundEnforcement, PositionTargetMod
 from robot_student.model.weight_initializer import OrthogonalInitializer
 
 
-def get_ppo_factory(*, motion_tracking: bool = False, compile_models: bool = False):
-    observation_keys = ("proprioception", "target") if motion_tracking else ("proprioception",)
-
+def get_ppo_factory(
+    *,
+    actor_observation_keys: tuple[str, ...],
+    critic_observation_keys: tuple[str, ...],
+    compile_models: bool = False,
+):
     policy = PolicyConfiguration(
         body_factory=partial(
             MLP,
             hidden_layers=[1024, 1024],
             weight_initializer=OrthogonalInitializer(head_gain=0.01),
         ),
-        observation_keys=observation_keys,
+        observation_keys=actor_observation_keys,
         action_key="control",
         action_bound_enforcement=ActionBoundEnforcement.BOUND_LOSS,
         position_target_mode=PositionTargetMode.DEFAULT_POSE_OFFSET,
@@ -29,7 +32,7 @@ def get_ppo_factory(*, motion_tracking: bool = False, compile_models: bool = Fal
             hidden_layers=[1024, 1024],
             weight_initializer=OrthogonalInitializer(head_gain=1.0),
         ),
-        observation_keys=observation_keys,
+        observation_keys=critic_observation_keys,
     )
 
     learning_rate = 3e-5

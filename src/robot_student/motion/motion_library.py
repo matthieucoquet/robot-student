@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from genesis.utils.geom import slerp
 
-from robot_student.engine.kinematic_robot import RobotState
+from robot_student.engine.robot_state import RobotState
 from robot_student.motion.motion_clip import MotionClip
 
 

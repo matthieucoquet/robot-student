@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import fields
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -7,7 +8,7 @@ from genesis.utils.geom import transform_by_quat, transform_quat_by_quat
 from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
-from robot_student.engine.kinematic_robot import RobotState
+from robot_student.engine.robot_state import NoiseConfiguration, RobotState
 from robot_student.environment.environment import Environment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
 from robot_student.environment.task.task import Task
@@ -28,12 +29,14 @@ class RobotEnvironment(Environment):
         initial_pose: Sequence[float],
         key_link_names: Sequence[str] = (),
         maximum_episode_steps: int = 1_000,
+        *,
+        noise_configuration: NoiseConfiguration | None = None,
     ) -> None:
         self._engine = engine
         self._task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
         self._engine.add_ground_plane()
-        self._robot = engine.add_robot(xml_path, control_mode=control_mode)
+        self._robot = engine.add_robot(xml_path, control_mode=control_mode, noise_configuration=noise_configuration)
 
         device = engine.device
         self._key_link_indices = torch.tensor(
@@ -67,12 +70,10 @@ class RobotEnvironment(Environment):
         self._schema = self._compute_schema()
         self._maximum_episode_steps = maximum_episode_steps
         self._episode_step_count = torch.zeros(self.count, device=device, dtype=torch.int64)
-        self._previous_action = torch.zeros(
-            (self.count, self._robot.n_controlled_dofs),
-            device=device,
-            dtype=self._robot.default_control.dtype,
-        )
+        # Starts at the default pose
+        self._previous_action = self._robot.default_control.expand(self.count, -1).clone()
         self._state: RobotState = self._robot.get_state()
+        self._noisy_state = self._robot.sample_noisy_observation(self._state)
 
     @property
     def device(self) -> torch.device:
@@ -86,17 +87,20 @@ class RobotEnvironment(Environment):
     def schema(self) -> EnvironmentSchema:
         return self._schema
 
+    @torch.no_grad()
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
-        self._previous_action.zero_()
+        self._previous_action.copy_(self._robot.default_control)
 
         self._engine.reset()
         self._task.reset(environment_indices=torch.arange(self._engine.environment_count, device=self.device, dtype=torch.int64))
         self._engine.reset_recording_camera()
 
         self._state = self._robot.get_state()
+        self._noisy_state = self._robot.sample_noisy_observation(self._state)
         return self._get_observation()
 
+    @torch.no_grad()
     def reset_done(self, done: torch.Tensor) -> TensorDictBase:
         environment_indices = done.reshape(-1).nonzero().reshape(-1)
 
@@ -108,13 +112,18 @@ class RobotEnvironment(Environment):
             reset_state = self._robot.get_state(environment_indices=environment_indices)
             self._state.copy_environments_(environment_indices, reset_state)
 
+            noisy_reset_state = self._robot.sample_noisy_observation(reset_state)
+            self._noisy_state.copy_environments_(environment_indices, noisy_reset_state)
+
             self._engine.reset_recording_camera(environment_indices)
             self._episode_step_count.masked_fill_(done, 0)
-            self._previous_action.index_fill_(0, environment_indices, 0)
+            self._previous_action[environment_indices] = self._robot.default_control
         return self._get_observation()
 
+    @torch.no_grad()
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-        self._robot.apply_control(action["control"].detach())
+        current_action = action["control"].detach()
+        self._robot.apply_control(current_action)
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
         normalized_control_forces = self._robot.get_normalized_control_forces()
@@ -123,14 +132,17 @@ class RobotEnvironment(Environment):
             self._engine.step()
 
         self._state = self._robot.get_state()
+        self._noisy_state = self._robot.sample_noisy_observation(self._state)
         self._episode_step_count.add_(1)
         task_feedback = self._task.compute_feedback(
             self._state,
             normalized_control_forces=normalized_control_forces,
+            current_action=current_action,
+            previous_action=self._previous_action,
         )
 
         truncated = self._episode_step_count >= self._maximum_episode_steps
-        self._previous_action.copy_(action["control"].detach())
+        self._previous_action.copy_(current_action)
 
         return self._get_observation(), task_feedback.reward, task_feedback.terminal, truncated, task_feedback.transition_metrics
 
@@ -139,16 +151,18 @@ class RobotEnvironment(Environment):
         key_link_position_size = 3 * self._key_link_indices.numel()
         proprioception_size = root_observation_size + 2 * self._robot.n_joint_dofs + key_link_position_size
 
-        task_schema = self._task.get_schema()
+        observations = {
+            "proprioception": TensorSchema(
+                shape=(proprioception_size,),
+                data_type=torch.float32,
+            ),
+        }
+        if self._robot.noisy_observation_enabled:
+            observations["proprioception_observed"] = observations["proprioception"]
+        observations.update(self._task.get_schema(noisy_observation_enabled=self._robot.noisy_observation_enabled))
 
         return EnvironmentSchema(
-            observations={
-                "proprioception": TensorSchema(
-                    shape=(proprioception_size,),
-                    data_type=torch.float32,
-                ),
-                **task_schema,
-            },
+            observations=observations,
             actions={"control": self._get_control_schema()},
         )
 
@@ -161,39 +175,10 @@ class RobotEnvironment(Environment):
         )
 
     def _get_observation(self) -> TensorDictBase:
-        robot_observation = self._get_robot_observation()
-        task_observation = self._task.observation(self._state, previous_action=self._previous_action)
-        robot_observation.update(task_observation)
-        return robot_observation
-
-    def _get_robot_observation(self) -> TensorDictBase:
-        root_position = self._state.root_position
-        root_rotation = self._state.root_rotation
-        root_velocity = self._state.root_velocity
-        root_angular_velocity = self._state.root_angular_velocity
-
-        key_link_positions = self._state.world_link_positions.index_select(-2, self._key_link_indices)
-        relative_key_link_positions = key_link_positions - root_position.unsqueeze(-2)
-
-        root_height = root_position[..., 2:3]
-        if self._global_observation:
-            root_rotation = quat_to_rot6d(root_rotation)
-        else:
-            inverse_heading = inverse_heading_rotation(root_rotation)
-            relative_key_link_positions = transform_by_quat(relative_key_link_positions, inverse_heading.unsqueeze(-2))
-            local_root_rotation = transform_quat_by_quat(root_rotation, inverse_heading)
-            root_rotation = quat_to_rot6d(local_root_rotation)
-            root_velocity = transform_by_quat(root_velocity, inverse_heading)
-            root_angular_velocity = transform_by_quat(root_angular_velocity, inverse_heading)
-
-        proprioception_components = [
-            root_height,
-            root_rotation,
-            root_velocity,
-            root_angular_velocity,
-            self._state.joint_dof_positions,  # TODO: mimickit use 6D for each joint, relative to the rest/initial pose
-            self._state.joint_dof_velocities,
-            relative_key_link_positions.flatten(start_dim=-2),
-        ]
-        proprioception = torch.cat(proprioception_components, dim=-1)
-        return TensorDict({"proprioception": proprioception}, batch_size=proprioception.shape[:-1], device=proprioception.device)
+        observation = self._task.observation(
+            self._state,
+            noisy_state=self._noisy_state,
+            previous_action=self._previous_action,
+        )
+        first_tensor = next(iter(observation.values()))
+        return TensorDict(observation, batch_size=first_tensor.shape[:-1], device=first_tensor.device)

@@ -1,18 +1,50 @@
+import math
+from dataclasses import fields
+
 import genesis as gs
 import torch
 from genesis.engine.entities import RigidEntity
+from genesis.utils.geom import transform_quat_by_quat, xyz_to_quat
 
 from robot_student.engine.control_mode import ControlMode, PositionControlMode
+from robot_student.engine.robot_state import NoiseConfiguration, RobotState
 
 from .kinematic_robot import KinematicRobot
 
 
 class Robot(KinematicRobot):
-    def __init__(self, entity: RigidEntity, control_mode: ControlMode) -> None:
+    def __init__(self, entity: RigidEntity, control_mode: ControlMode, *, noise_configuration: NoiseConfiguration | None = None) -> None:
         super().__init__(entity)
+        self._noise_configuration = noise_configuration
+        self._observation_noise: dict[str, float] = {}
+        self.noisy_observation_enabled = False
+        if noise_configuration is not None:
+            for field in fields(noise_configuration):
+                noise = getattr(noise_configuration, field.name)
+                if noise is None or noise.half_width <= 0:
+                    continue
+                self._observation_noise[field.name] = noise.half_width
+                self.noisy_observation_enabled = True
         self._control_mode = control_mode
         self._setup_controlled_joints()
         self.n_controlled_dofs = len(self._controlled_dof_indices)
+
+    def sample_noisy_observation(self, state: RobotState) -> RobotState:
+        if not self.noisy_observation_enabled:
+            return state
+
+        observation = state.clone(recurse=False)
+        for field_name, half_width in self._observation_noise.items():
+            value = getattr(state, field_name)
+            if field_name in ("root_rotation", "world_link_rotations"):
+                angles = value.new_empty((*value.shape[:-1], 3)).uniform_(-half_width, half_width)
+                noise_rotation = xyz_to_quat(angles, rpy=True)
+                noisy_value = transform_quat_by_quat(noise_rotation, value)
+            else:
+                noise = torch.empty_like(value).uniform_(-half_width, half_width)
+                noisy_value = noise.add_(value)
+            setattr(observation, field_name, noisy_value)
+        return observation
 
     def _setup_controlled_joints(self) -> None:
         match self._control_mode:
@@ -74,6 +106,9 @@ class Robot(KinematicRobot):
     def default_control(self) -> torch.Tensor:
         return self._default_control_positions
 
+    def get_joint_dof_limits(self) -> tuple[torch.Tensor, torch.Tensor]:
+        return self._entity.get_dofs_limit(self._controlled_dof_indices)
+
     def set_default_pose(self, default_pose: torch.Tensor) -> None:
         self._default_pose = default_pose.detach().clone()
         self.set_generalized_positions(self._default_pose, zero_velocity=True)
@@ -84,7 +119,7 @@ class Robot(KinematicRobot):
         self._default_control_positions = controlled_positions.detach().clone()
 
         lower_bounds, upper_bounds = self._entity.get_dofs_limit(self._controlled_dof_indices)
-        self._control_lower_bounds, self._control_upper_bounds = _scale_control_limits(
+        self._control_lower_bounds, self._control_upper_bounds = scale_joint_position_limits(
             lower_bounds, upper_bounds, self._control_mode.action_limit_scale
         )
         self._control_targets = self._default_pose.new_empty((*self._default_pose.shape[:-1], self.n_controlled_dofs))
@@ -99,6 +134,9 @@ class Robot(KinematicRobot):
         control_forces = self.get_control_forces(environment_indices)
         return control_forces.mul_(self._inverse_maximum_control_forces)
 
+    def get_links_net_contact_force(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        return self._entity.get_links_net_contact_force(envs_idx=environment_indices)
+
     def apply_control(self, control: torch.Tensor) -> None:
         torch.clamp(
             control,
@@ -110,14 +148,14 @@ class Robot(KinematicRobot):
         self._entity.control_dofs_position(self._control_targets, self._controlled_dof_indices)
 
 
-def _scale_control_limits(
+def scale_joint_position_limits(
     lower_bounds: torch.Tensor,
     upper_bounds: torch.Tensor,
-    action_limit_scale: float | None,
+    scale: float | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    if action_limit_scale is None:
+    if scale is None:
         return lower_bounds, upper_bounds
 
     bound_centers = (lower_bounds + upper_bounds) * 0.5
-    bound_half_ranges = (upper_bounds - lower_bounds) * (0.5 * action_limit_scale)
+    bound_half_ranges = (upper_bounds - lower_bounds) * (0.5 * scale)
     return bound_centers - bound_half_ranges, bound_centers + bound_half_ranges

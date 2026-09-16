@@ -1,10 +1,11 @@
 import math
 from collections.abc import Sequence
+from typing import Any
 
 import torch
 
-from robot_student.engine.kinematic_robot import RobotState
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.task import Task, TaskFeedback
 from robot_student.util.geometry import heading_angle
@@ -64,6 +65,7 @@ class RunInDirectionTask(Task):
         self,
         state: RobotState,
         normalized_control_forces: torch.Tensor,
+        **kwargs: Any,
     ) -> TaskFeedback:
         root_height = state.root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height

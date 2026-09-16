@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import torch
 
-from robot_student.engine.kinematic_robot import RobotState
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 
 if TYPE_CHECKING:
