@@ -22,7 +22,7 @@ class BeyondMimicTask(MotionTrackingTask):
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
         anchor_link_name: str = "pelvis",
         soft_joint_position_limit_factor: float = 0.9,
-        ignored_contact_link_names: tuple[str, ...] = (
+        end_effector_link_names: tuple[str, ...] = (
             "left_ankle_roll_link",
             "right_ankle_roll_link",
             "left_wrist_yaw_link",
@@ -38,7 +38,7 @@ class BeyondMimicTask(MotionTrackingTask):
         )
         self._anchor_link_name = anchor_link_name
         self._soft_joint_position_limit_factor = soft_joint_position_limit_factor
-        self._ignored_contact_link_names = ignored_contact_link_names
+        self._end_effector_link_names = end_effector_link_names
         self._contact_force_threshold = contact_force_threshold
 
     def initialize(
@@ -60,9 +60,10 @@ class BeyondMimicTask(MotionTrackingTask):
         self._soft_joint_position_lower_bounds, self._soft_joint_position_upper_bounds = scale_joint_position_limits(
             lower_bounds, upper_bounds, self._soft_joint_position_limit_factor
         )
-        ignored_contact_link_indices = set(self._robot.get_link_indices(self._ignored_contact_link_names))
+        end_effector_link_indices = self._robot.get_link_indices(self._end_effector_link_names)
+        self._end_effector_link_indices = torch.tensor(end_effector_link_indices, dtype=torch.int64, device=key_link_indices.device)
         self._penalized_contact_link_indices = torch.tensor(
-            [index for index in range(self._robot.n_links) if index not in ignored_contact_link_indices],
+            [index for index in range(self._robot.n_links) if index not in end_effector_link_indices],
             dtype=torch.int64,
             device=key_link_indices.device,
         )
@@ -252,8 +253,23 @@ class BeyondMimicTask(MotionTrackingTask):
         )
         return reward, reward_components
 
-    def _compute_terminal(self, state: RobotState, reference: RobotState):
-        pass
+    def _compute_terminal(self, state: RobotState, reference: RobotState) -> torch.Tensor:
+        anchor_height = state.world_link_positions[..., self._anchor_link_index, 2]
+        reference_anchor_height = reference.world_link_positions[..., self._anchor_link_index, 2]
+        anchor_height_error = (anchor_height - reference_anchor_height).abs()
+
+        end_effector_heights = state.world_link_positions[..., 2].index_select(-1, self._end_effector_link_indices)
+        reference_end_effector_heights = reference.world_link_positions[..., 2].index_select(-1, self._end_effector_link_indices)
+        end_effector_height_errors = (end_effector_heights - reference_end_effector_heights).abs()
+
+        anchor_rotation = state.world_link_rotations[..., self._anchor_link_index, :]
+        reference_anchor_rotation = reference.world_link_rotations[..., self._anchor_link_index, :]
+
+        anchor_gravity_z = 2.0 * anchor_rotation[..., 1:3].square().sum(dim=-1) - 1.0
+        reference_anchor_gravity_z = 2.0 * reference_anchor_rotation[..., 1:3].square().sum(dim=-1) - 1.0
+        anchor_tilt_error = (anchor_gravity_z - reference_anchor_gravity_z).abs()
+
+        return (anchor_height_error > 0.25) | (end_effector_height_errors > 0.25).any(dim=-1) | (anchor_tilt_error > 0.8)
 
     def step(self, is_control_step: bool) -> None:
         pass
