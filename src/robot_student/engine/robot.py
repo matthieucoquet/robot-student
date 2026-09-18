@@ -1,5 +1,4 @@
-import math
-from dataclasses import fields
+from dataclasses import dataclass, fields
 
 import genesis as gs
 import torch
@@ -12,9 +11,32 @@ from robot_student.engine.robot_state import NoiseConfiguration, RobotState
 from .kinematic_robot import KinematicRobot
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class CenterOfMassRandomization:
+    link_name: str
+    x_range: tuple[float, float] = (0.0, 0.0)
+    y_range: tuple[float, float] = (0.0, 0.0)
+    z_range: tuple[float, float] = (0.0, 0.0)
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class DomainRandomizationConfiguration:
+    friction_ratio_range: tuple[float, float] | None = None
+    center_of_mass: CenterOfMassRandomization | None = None
+    default_joint_position_offset_range: tuple[float, float] | None = None
+
+
 class Robot(KinematicRobot):
-    def __init__(self, entity: RigidEntity, control_mode: ControlMode, *, noise_configuration: NoiseConfiguration | None = None) -> None:
+    def __init__(
+        self,
+        entity: RigidEntity,
+        control_mode: ControlMode,
+        *,
+        noise_configuration: NoiseConfiguration | None = None,
+        domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
+    ) -> None:
         super().__init__(entity)
+        self._domain_randomization_configuration = domain_randomization_configuration
         self._noise_configuration = noise_configuration
         self._observation_noise: dict[str, float] = {}
         self.noisy_observation_enabled = False
@@ -28,6 +50,27 @@ class Robot(KinematicRobot):
         self._control_mode = control_mode
         self._setup_controlled_joints()
         self.n_controlled_dofs = len(self._controlled_dof_indices)
+
+    @torch.no_grad()
+    def configure_domain_randomization(self, environment_count: int) -> None:
+        """Sample after scene building, before registering the scene's initial state."""
+        configuration = self._domain_randomization_configuration
+        if configuration is None:
+            return
+
+        if configuration.friction_ratio_range is not None:
+            friction_ratio = torch.empty((environment_count, self.n_links), dtype=gs.tc_float, device=gs.device)
+            friction_ratio.uniform_(*configuration.friction_ratio_range)
+            self._entity.set_friction_ratio(friction_ratio)
+
+        if configuration.center_of_mass is not None:
+            center_of_mass = configuration.center_of_mass
+            link_name = center_of_mass.link_name
+            center_of_mass_link_indices = self.get_link_indices((link_name,))
+            offsets = torch.empty((environment_count, 1, 3), dtype=gs.tc_float, device=gs.device)
+            for axis, bounds in enumerate((center_of_mass.x_range, center_of_mass.y_range, center_of_mass.z_range)):
+                offsets[..., axis].uniform_(*bounds)
+            self._entity.set_COM_shift(offsets, links_idx_local=center_of_mass_link_indices)
 
     def sample_noisy_observation(self, state: RobotState) -> RobotState:
         if not self.noisy_observation_enabled:

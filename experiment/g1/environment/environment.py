@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
+from robot_student.engine.robot import CenterOfMassRandomization, DomainRandomizationConfiguration
 from robot_student.engine.robot_state import NoiseConfiguration, UniformNoise
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
@@ -139,6 +140,16 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
     reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     control_frequency: int = 50
     simulation_frequency: int = 200
+    domain_randomization_configuration: DomainRandomizationConfiguration | None = DomainRandomizationConfiguration(
+        friction_ratio_range=(0.3, 1.6),
+        default_joint_position_offset_range=(-0.01, 0.01),
+        center_of_mass=CenterOfMassRandomization(
+            link_name="torso_link",
+            x_range=(-0.025, 0.025),
+            y_range=(-0.05, 0.05),
+            z_range=(-0.05, 0.05),
+        ),
+    )
 
     def create_environment(
         self,
@@ -197,4 +208,5 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             initial_pose=initial_pose,
             key_link_names=key_link_names,
             noise_configuration=robot_state_noise,
+            domain_randomization_configuration=self.domain_randomization_configuration,
         )

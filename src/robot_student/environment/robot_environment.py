@@ -1,18 +1,16 @@
 from collections.abc import Sequence
-from dataclasses import fields
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
-from genesis.utils.geom import transform_by_quat, transform_quat_by_quat
 from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
+from robot_student.engine.robot import DomainRandomizationConfiguration
 from robot_student.engine.robot_state import NoiseConfiguration, RobotState
 from robot_student.environment.environment import Environment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
 from robot_student.environment.task.task import Task
-from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d
 
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
@@ -31,12 +29,18 @@ class RobotEnvironment(Environment):
         maximum_episode_steps: int = 1_000,
         *,
         noise_configuration: NoiseConfiguration | None = None,
+        domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
     ) -> None:
         self._engine = engine
         self._task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
         self._engine.add_ground_plane()
-        self._robot = engine.add_robot(xml_path, control_mode=control_mode, noise_configuration=noise_configuration)
+        self._robot = engine.add_robot(
+            xml_path,
+            control_mode=control_mode,
+            noise_configuration=noise_configuration,
+            domain_randomization_configuration=domain_randomization_configuration,
+        )
 
         device = engine.device
         self._key_link_indices = torch.tensor(

@@ -5,7 +5,7 @@ import torch
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.kinematic_robot import KinematicRobot
-from robot_student.engine.robot import Robot
+from robot_student.engine.robot import DomainRandomizationConfiguration, Robot
 from robot_student.engine.robot_state import NoiseConfiguration
 
 
@@ -48,9 +48,21 @@ class GenesisEngine:
     def device(self) -> torch.device:
         return gs.device
 
-    def add_robot(self, xml_path: Path, control_mode: ControlMode, *, noise_configuration: NoiseConfiguration | None = None) -> Robot:
+    def add_robot(
+        self,
+        xml_path: Path,
+        control_mode: ControlMode,
+        *,
+        noise_configuration: NoiseConfiguration | None = None,
+        domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
+    ) -> Robot:
         entity = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
-        robot = Robot(entity, control_mode=control_mode, noise_configuration=noise_configuration)
+        robot = Robot(
+            entity,
+            control_mode=control_mode,
+            noise_configuration=noise_configuration,
+            domain_randomization_configuration=domain_randomization_configuration,
+        )
         self.robots.append(robot)
 
         if self._recording_camera is not None:
@@ -79,8 +91,9 @@ class GenesisEngine:
         )
         return KinematicRobot(entity)
 
-    def add_ground_plane(self) -> None:
-        self._scene.add_entity(gs.morphs.Plane())
+    def add_ground_plane(self, *, friction: float | None = None) -> None:
+        material = None if friction is None else gs.materials.Rigid(friction=friction)
+        self._scene.add_entity(gs.morphs.Plane(), material=material)
 
     def setup_recording(
         self,
@@ -129,6 +142,7 @@ class GenesisEngine:
         self._scene.build(n_envs=self.environment_count, env_spacing=env_spacing)
         for robot in self.robots:
             robot.configure_control_mode()
+            robot.configure_domain_randomization(self.environment_count)
 
     def step(self) -> None:
         self._scene.step()
