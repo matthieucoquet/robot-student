@@ -149,6 +149,10 @@ class Robot(KinematicRobot):
     def default_control(self) -> torch.Tensor:
         return self._default_control_positions
 
+    @property
+    def default_joint_positions(self) -> torch.Tensor:
+        return self._default_joint_positions
+
     def get_joint_dof_limits(self) -> tuple[torch.Tensor, torch.Tensor]:
         return self._entity.get_dofs_limit(self._controlled_dof_indices)
 
@@ -160,6 +164,15 @@ class Robot(KinematicRobot):
         if controlled_positions.ndim > 1:
             controlled_positions = controlled_positions[0]
         self._default_control_positions = controlled_positions.detach().clone()
+
+        joint_positions = self._default_pose[..., self.n_root_qs :]
+        joint_position_offsets = torch.zeros_like(joint_positions)
+        configuration = self._domain_randomization_configuration
+        if configuration is not None and configuration.default_joint_position_offset_range is not None:
+            joint_position_offsets.uniform_(*configuration.default_joint_position_offset_range)
+        self._default_joint_positions = joint_positions + joint_position_offsets
+        controlled_joint_indices = [index - self.n_root_dofs for index in self._controlled_dof_indices]
+        self._control_position_offsets = joint_position_offsets[..., controlled_joint_indices]
 
         lower_bounds, upper_bounds = self._entity.get_dofs_limit(self._controlled_dof_indices)
         self._control_lower_bounds, self._control_upper_bounds = scale_joint_position_limits(
@@ -181,8 +194,9 @@ class Robot(KinematicRobot):
         return self._entity.get_links_net_contact_force(envs_idx=environment_indices)
 
     def apply_control(self, control: torch.Tensor) -> None:
+        torch.add(control, self._control_position_offsets, out=self._control_targets)
         torch.clamp(
-            control,
+            self._control_targets,
             min=self._control_lower_bounds,
             max=self._control_upper_bounds,
             out=self._control_targets,

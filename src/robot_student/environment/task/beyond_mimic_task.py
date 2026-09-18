@@ -113,7 +113,7 @@ class BeyondMimicTask(MotionTrackingTask):
             root_linear_velocities = inv_transform_by_quat(observed_state.root_velocity, observed_state.root_rotation)
             root_angular_velocities = inv_transform_by_quat(observed_state.root_angular_velocity, observed_state.root_rotation)
 
-            joint_positions = observed_state.joint_dof_positions
+            joint_positions = observed_state.joint_dof_positions - self._robot.default_joint_positions
             joint_velocities = observed_state.joint_dof_velocities
 
             if noisy_observation:
