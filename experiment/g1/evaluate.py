@@ -1,16 +1,17 @@
 import logging
 
+from robot_student.motion import ReferenceSampling
 from robot_student.run import Evaluation, RecordingConfiguration
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment.environment import TrackerEnvironmentFactory
+from .environment.environment import DeepMimicEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = TrackerEnvironmentFactory(
+    environment = DeepMimicEnvironmentFactory(
         headless=True,
         environment_count=1,
-        random_reference_sampling=False,
+        reference_sampling=ReferenceSampling.ZERO,
         show_reference_motion=True,
         reference_motion_offset=(0.0, 1.0, 0.0),
     )

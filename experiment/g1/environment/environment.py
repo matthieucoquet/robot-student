@@ -8,7 +8,7 @@ from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.task.beyond_mimic_task import BeyondMimicTask
 from robot_student.environment.task.deep_mimic_task import DeepMimicTask
-from robot_student.motion import MotionLibrary
+from robot_student.motion import MotionLibrary, ReferenceSampling
 from robot_student.run.environment_factory import EnvironmentFactory
 
 from .robot_configuration import g1_configuration
@@ -50,7 +50,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
 @dataclass(frozen=True, kw_only=True, slots=True)
 class DeepMimicEnvironmentFactory(EnvironmentFactory):
     is_29_dof: bool = True
-    random_reference_sampling: bool = True
+    reference_sampling: ReferenceSampling = ReferenceSampling.UNIFORM
     show_reference_motion: bool = False
     reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
@@ -65,7 +65,9 @@ class DeepMimicEnvironmentFactory(EnvironmentFactory):
         if not motion_path.is_file():
             raise FileNotFoundError(f"Preprocessed motion not found: {motion_path}")
 
-        motion_library = MotionLibrary([motion_path], device=engine.device)
+        motion_library = MotionLibrary(
+            [motion_path], device=engine.device, control_frequency=self.control_frequency, reference_sampling=self.reference_sampling
+        )
 
         joint_reward_weight = (
             1.0,  # Left hip pitch.
@@ -116,7 +118,6 @@ class DeepMimicEnvironmentFactory(EnvironmentFactory):
             motion_library=motion_library,
             target_steps=[1, 2, 3],
             joint_reward_weight=joint_reward_weight,
-            random_reference_sampling=self.random_reference_sampling,
             show_reference_motion=self.show_reference_motion,
             reference_motion_offset=self.reference_motion_offset,
         )
@@ -135,7 +136,7 @@ class DeepMimicEnvironmentFactory(EnvironmentFactory):
 @dataclass(frozen=True, kw_only=True, slots=True)
 class BeyondMimicEnvironmentFactory(EnvironmentFactory):
     is_29_dof: bool = True
-    random_reference_sampling: bool = True
+    reference_sampling: ReferenceSampling = ReferenceSampling.ADAPTIVE
     show_reference_motion: bool = False
     reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     control_frequency: int = 50
@@ -162,7 +163,9 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
         if not motion_path.is_file():
             raise FileNotFoundError(f"Preprocessed motion not found: {motion_path}")
 
-        motion_library = MotionLibrary([motion_path], device=engine.device)
+        motion_library = MotionLibrary(
+            [motion_path], device=engine.device, control_frequency=self.control_frequency, reference_sampling=self.reference_sampling
+        )
 
         anchor_link_name = "torso_link"
         key_link_names = (

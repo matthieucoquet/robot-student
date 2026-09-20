@@ -22,7 +22,6 @@ class DeepMimicTask(MotionTrackingTask):
         motion_library: MotionLibrary,
         target_steps: Sequence[float],
         joint_reward_weight: Sequence[float],
-        random_reference_sampling: bool = False,
         show_reference_motion: bool = False,
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
     ) -> None:
@@ -34,7 +33,6 @@ class DeepMimicTask(MotionTrackingTask):
         )
 
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
-        self._random_reference_sampling = random_reference_sampling
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
         self._reference_state = motion_library.get_state(
             torch.zeros(environment_count, dtype=torch.int64, device=device),
@@ -43,10 +41,7 @@ class DeepMimicTask(MotionTrackingTask):
         self._motion_finished = torch.zeros(environment_count, dtype=torch.bool, device=device)
 
     def reset(self, environment_indices: torch.Tensor) -> None:
-        reference_state = self._reference_robot.reset(
-            random_sampling=self._random_reference_sampling,
-            environment_indices=environment_indices,
-        )
+        reference_state = self._reference_robot.reset(environment_indices=environment_indices)
         self._robot.set_state(reference_state, environment_indices=environment_indices)
         self._reference_state.copy_environments_(environment_indices, reference_state)
         self._motion_finished.index_fill_(0, environment_indices, False)
@@ -169,6 +164,7 @@ class DeepMimicTask(MotionTrackingTask):
         link_distances = torch.max(link_distances, dim=-1)[0]
 
         terminal = link_distances > 1.0
+        self._reference_robot.record_failures(terminal)
         terminal.logical_or_(self._motion_finished)
         return terminal
 

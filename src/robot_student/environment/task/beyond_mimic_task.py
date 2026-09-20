@@ -301,9 +301,11 @@ class BeyondMimicTask(MotionTrackingTask):
             undesired_contact_penalty,
         ) = reward_components
 
+        terminal = self._compute_terminal(state, self._reference_state)
+        self._reference_robot.record_failures(terminal)
         return TaskFeedback(
             reward=reward,
-            terminal=self._compute_terminal(state, self._reference_state),
+            terminal=terminal,
             transition_metrics={
                 "task/anchor_position_reward_mean": anchor_position_reward.mean(),
                 "task/anchor_rotation_reward_mean": anchor_rotation_reward.mean(),
