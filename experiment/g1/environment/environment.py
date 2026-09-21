@@ -113,7 +113,6 @@ class DeepMimicEnvironmentFactory(EnvironmentFactory):
 
         task = DeepMimicTask(
             device=engine.device,
-            environment_count=engine.environment_count,
             xml_path=mjcf_path,
             motion_library=motion_library,
             target_steps=[1, 2, 3],

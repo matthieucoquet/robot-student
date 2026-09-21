@@ -17,7 +17,6 @@ class DeepMimicTask(MotionTrackingTask):
     def __init__(
         self,
         device: torch.device,
-        environment_count: int,
         xml_path: Path,
         motion_library: MotionLibrary,
         target_steps: Sequence[float],
@@ -34,17 +33,6 @@ class DeepMimicTask(MotionTrackingTask):
 
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
-        self._reference_state = motion_library.get_state(
-            torch.zeros(environment_count, dtype=torch.int64, device=device),
-            torch.zeros(environment_count, dtype=torch.float32, device=device),
-        )
-        self._motion_finished = torch.zeros(environment_count, dtype=torch.bool, device=device)
-
-    def reset(self, environment_indices: torch.Tensor) -> None:
-        reference_state = self._reference_robot.reset(environment_indices=environment_indices)
-        self._robot.set_state(reference_state, environment_indices=environment_indices)
-        self._reference_state.copy_environments_(environment_indices, reference_state)
-        self._motion_finished.index_fill_(0, environment_indices, False)
 
     def get_schema(self) -> dict[str, TensorSchema]:
         key_link_position_size = 3 * self._key_link_indices.numel()
@@ -167,12 +155,6 @@ class DeepMimicTask(MotionTrackingTask):
         self._reference_robot.record_failures(terminal)
         terminal.logical_or_(self._motion_finished)
         return terminal
-
-    def step(self, is_control_step: bool) -> None:
-        if self._show_reference_motion:
-            self._reference_state, self._motion_finished = self._reference_robot.step(1)
-        elif is_control_step:
-            self._reference_state, self._motion_finished = self._reference_robot.step(self._simulation_steps_per_control_step)
 
     def compute_feedback(self, state: RobotState, **kwargs: Any) -> TaskFeedback:
         reward, reward_components = self._compute_reward(state, self._reference_state)

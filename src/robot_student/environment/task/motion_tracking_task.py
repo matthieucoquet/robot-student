@@ -40,6 +40,11 @@ class MotionTrackingTask(Task):
             kinematic_robot=self._kinematic_robot,
             display_offset=self._reference_motion_offset,
         )
+        self._reference_state = self._motion_library.get_state(
+            torch.zeros(engine.environment_count, dtype=torch.int64, device=engine.device),
+            torch.zeros(engine.environment_count, dtype=torch.float32, device=engine.device),
+        )
+        self._motion_finished = torch.zeros(engine.environment_count, dtype=torch.bool, device=engine.device)
 
     def initialize(
         self,
@@ -53,3 +58,15 @@ class MotionTrackingTask(Task):
         self._key_link_indices = key_link_indices
         self._simulation_steps_per_control_step = simulation_steps_per_control_step
         self._global_observation = global_observation
+
+    def reset(self, environment_indices: torch.Tensor) -> None:
+        reference_state = self._reference_robot.reset(environment_indices=environment_indices)
+        self._robot.set_state(reference_state, environment_indices=environment_indices)
+        self._reference_state.copy_environments_(environment_indices, reference_state)
+        self._motion_finished.index_fill_(0, environment_indices, False)
+
+    def step(self, is_control_step: bool) -> None:
+        if self._show_reference_motion:
+            self._reference_state, self._motion_finished = self._reference_robot.step(1)
+        elif is_control_step:
+            self._reference_state, self._motion_finished = self._reference_robot.step(self._simulation_steps_per_control_step)

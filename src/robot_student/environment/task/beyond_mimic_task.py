@@ -68,9 +68,6 @@ class BeyondMimicTask(MotionTrackingTask):
             device=key_link_indices.device,
         )
 
-    def reset(self, environment_indices: torch.Tensor) -> None:
-        raise NotImplementedError("Beyond Mimic reference initialization is not implemented")
-
     def get_schema(self, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
         joint_count = self._robot.n_joint_dofs
         link_count = self._key_link_indices.numel()
@@ -270,9 +267,6 @@ class BeyondMimicTask(MotionTrackingTask):
         anchor_tilt_error = (anchor_gravity_z - reference_anchor_gravity_z).abs()
 
         return (anchor_height_error > 0.25) | (end_effector_height_errors > 0.25).any(dim=-1) | (anchor_tilt_error > 0.8)
-
-    def step(self, is_control_step: bool) -> None:
-        pass
 
     def compute_feedback(
         self,
