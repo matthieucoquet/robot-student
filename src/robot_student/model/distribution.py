@@ -9,7 +9,8 @@ class ActionDistribution(torch.distributions.Independent):
         self,
         mean: torch.Tensor,
         standard_deviation: float,
-        bounds: tuple[torch.Tensor, torch.Tensor],
+        action_offset: torch.Tensor,
+        action_scale: torch.Tensor,
         action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS,
     ) -> None:
         distribution: torch.distributions.Distribution = torch.distributions.Normal(mean, standard_deviation)
@@ -20,11 +21,8 @@ class ActionDistribution(torch.distributions.Independent):
             distribution_transforms.append(transforms.TanhTransform(cache_size=1))
             self.action_mean = torch.tanh(self.action_mean)
 
-        lower_bounds, upper_bounds = bounds
-        center = (lower_bounds + upper_bounds) * 0.5
-        half_range = (upper_bounds - lower_bounds) * 0.5
-        distribution_transforms.append(transforms.AffineTransform(loc=center, scale=half_range))
-        self.action_mean = center + half_range * self.action_mean
+        distribution_transforms.append(transforms.AffineTransform(loc=action_offset, scale=action_scale))
+        self.action_mean = action_offset + action_scale * self.action_mean
 
         distribution = torch.distributions.TransformedDistribution(distribution, distribution_transforms)
 

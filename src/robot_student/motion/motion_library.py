@@ -1,3 +1,4 @@
+import math
 from enum import StrEnum
 from pathlib import Path
 
@@ -20,13 +21,10 @@ class MotionLibrary:
         motion_paths: list[Path],
         device: torch.device | str,
         *,
-        control_frequency: int,
         reference_sampling: ReferenceSampling = ReferenceSampling.UNIFORM,
     ) -> None:
         if not motion_paths:
             raise ValueError("At least one motion path is required")
-        if control_frequency <= 0:
-            raise ValueError("control_frequency must be positive")
 
         self._reference_sampling = ReferenceSampling(reference_sampling)
         motions: list[MotionClip] = []
@@ -45,7 +43,7 @@ class MotionLibrary:
         )
         self.frames = torch.cat([motion_clip.frames for motion_clip in motions], dim=0)
         if self._reference_sampling is ReferenceSampling.ADAPTIVE:
-            bin_counts = [motion.frame_count // control_frequency + 1 for motion in motions]
+            bin_counts = [max(1, math.ceil((motion.frame_count - 1) / motion.frequency)) for motion in motions]
             self._bin_counts = torch.tensor(bin_counts, dtype=torch.int64, device=device)
             self._bin_starts = self._bin_counts.cumsum(0) - self._bin_counts
             total_bin_count = sum(bin_counts)
@@ -76,9 +74,8 @@ class MotionLibrary:
     def record_failures(self, motion_indices: torch.Tensor, motion_times: torch.Tensor, failed: torch.Tensor) -> None:
         if self._reference_sampling is not ReferenceSampling.ADAPTIVE:
             return
-        durations = self.motion_durations[motion_indices]
         bin_counts = self._bin_counts[motion_indices]
-        local_bins = (motion_times * bin_counts / durations.clamp_min(1e-8)).long()
+        local_bins = motion_times.floor().long().clamp_min_(0)
         local_bins = torch.minimum(local_bins, bin_counts - 1)
         bins = self._bin_starts[motion_indices] + local_bins
         self._failure_counts.mul_(0.999)
@@ -89,8 +86,10 @@ class MotionLibrary:
         bins = torch.multinomial(weights, count, replacement=True)
         motion_indices = self._bin_motion_indices[bins]
         local_bins = bins - self._bin_starts[motion_indices]
-        phase = (local_bins + torch.rand(count, device=bins.device)) / self._bin_counts[motion_indices]
-        return motion_indices, phase * self.motion_durations[motion_indices]
+        bin_start_times = local_bins.to(self.motion_durations.dtype)
+        bin_durations = (self.motion_durations[motion_indices] - bin_start_times).clamp(max=1.0)
+        sample_times = bin_start_times + torch.rand(count, device=bins.device, dtype=bin_start_times.dtype) * bin_durations
+        return motion_indices, sample_times
 
     def get_state(self, motion_indices: torch.Tensor, time: torch.Tensor) -> RobotState:
         durations = self.motion_durations[motion_indices]

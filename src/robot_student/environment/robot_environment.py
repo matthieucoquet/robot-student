@@ -151,19 +151,7 @@ class RobotEnvironment(Environment):
         return self._get_observation(), task_feedback.reward, task_feedback.terminal, truncated, task_feedback.transition_metrics
 
     def _compute_schema(self) -> EnvironmentSchema:
-        root_observation_size = 1 + 6 + 3 + 3
-        key_link_position_size = 3 * self._key_link_indices.numel()
-        proprioception_size = root_observation_size + 2 * self._robot.n_joint_dofs + key_link_position_size
-
-        observations = {
-            "proprioception": TensorSchema(
-                shape=(proprioception_size,),
-                data_type=torch.float32,
-            ),
-        }
-        if self._robot.noisy_observation_enabled:
-            observations["proprioception_observed"] = observations["proprioception"]
-        observations.update(self._task.get_schema(noisy_observation_enabled=self._robot.noisy_observation_enabled))
+        observations = self._task.get_schema(noisy_observation_enabled=self._robot.noisy_observation_enabled)
 
         return EnvironmentSchema(
             observations=observations,
@@ -176,6 +164,7 @@ class RobotEnvironment(Environment):
             data_type=torch.float32,
             bounds=self._robot.control_bounds,
             default_value=self._robot.default_control,
+            action_scale=self._robot.control_action_scale,
         )
 
     def _get_observation(self) -> TensorDictBase:

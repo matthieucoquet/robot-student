@@ -12,7 +12,7 @@ class PositionControlSettings:
 @dataclass
 class PositionControlMode:
     joints: dict[str, PositionControlSettings]
-    action_limit_scale: float | None = 1.4
+    action_limit_scale: float | None = 1.4  # None disables target clamping
 
 
 ControlMode = PositionControlMode

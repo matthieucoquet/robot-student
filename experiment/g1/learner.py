@@ -22,8 +22,8 @@ def get_ppo_factory(
         ),
         observation_keys=actor_observation_keys,
         action_key="control",
-        action_bound_enforcement=ActionBoundEnforcement.BOUND_LOSS,
-        position_target_mode=PositionTargetMode.DEFAULT_POSE_OFFSET,
+        action_bound_enforcement=ActionBoundEnforcement.NONE,
+        position_target_mode=PositionTargetMode.EFFORT_SCALED_ACTION,
     )
 
     value_function = ValueFunctionConfiguration(

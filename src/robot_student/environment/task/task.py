@@ -51,5 +51,9 @@ class Task(ABC):
         """Compute reward, termination, and metrics from the robot state and task-specific inputs."""
 
     @abstractmethod
-    def observation(self, robot_state: RobotState, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Return task observations. previous_action is a read-only buffer, zero on reset; clone it if returning it directly."""
+    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Return observations matching get_schema.
+
+        noisy_state equals the clean state when noise is disabled. Both states are read-only.
+        previous_action is a read-only buffer; clone it if returning it directly.
+        """

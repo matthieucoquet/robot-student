@@ -7,6 +7,7 @@ import torch
 from robot_student.engine.robot import Robot
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
+from robot_student.environment.task.observation import proprioception_observation, proprioception_schema
 from robot_student.environment.task.task import Task, TaskFeedback
 from robot_student.util.geometry import heading_angle
 
@@ -42,8 +43,8 @@ class RunInDirectionTask(Task):
         self._default_joint_positions = torch.tensor(default_joint_positions, device=device, dtype=torch.float32)
         self._minimum_healthy_height, self._maximum_healthy_height = height_range
 
-    def get_schema(self) -> dict[str, TensorSchema]:
-        return {}
+    def get_schema(self, *, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
+        return {"proprioception": proprioception_schema(self._robot.n_joint_dofs, self._key_link_indices.numel())}
 
     def initialize(
         self,
@@ -53,13 +54,19 @@ class RunInDirectionTask(Task):
         simulation_steps_per_control_step: int,
         global_observation: bool,
     ) -> None:
-        pass
+        self._robot = robot
+        self._key_link_indices = key_link_indices
+        self._global_observation = global_observation
 
     def reset(self, environment_indices: torch.Tensor) -> None:
         pass
 
-    def observation(self, robot_state: RobotState, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {}
+    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        return {
+            "proprioception": proprioception_observation(
+                robot_state, key_link_indices=self._key_link_indices, global_observation=self._global_observation
+            )
+        }
 
     def compute_feedback(
         self,

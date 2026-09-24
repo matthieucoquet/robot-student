@@ -4,15 +4,17 @@ from typing import Any
 import torch
 from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_quat, transform_quat_by_quat
 
-from robot_student.engine.robot import Robot, scale_joint_position_limits
+from robot_student.engine.robot import Robot
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
-from robot_student.environment.task.motion_tracking_task import MotionTrackingTask
+from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
 from robot_student.environment.task.task import TaskFeedback
 from robot_student.motion import MotionLibrary
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
 
 
+# Differences from upstream BeyondMimic: motion completion ends the episode;
+# observation noise perturbs robot state before feature construction, rather than observation terms directly.
 class BeyondMimicTask(MotionTrackingTask):
     def __init__(
         self,
@@ -29,15 +31,17 @@ class BeyondMimicTask(MotionTrackingTask):
             "right_wrist_yaw_link",
         ),
         contact_force_threshold: float = 1.0,
+        reset_perturbation_configuration: ResetPerturbationConfiguration | None = None,
     ) -> None:
         super().__init__(
             xml_path=xml_path,
             motion_library=motion_library,
             show_reference_motion=show_reference_motion,
             reference_motion_offset=reference_motion_offset,
+            reset_perturbation_configuration=reset_perturbation_configuration,
+            soft_joint_position_limit_factor=soft_joint_position_limit_factor,
         )
         self._anchor_link_name = anchor_link_name
-        self._soft_joint_position_limit_factor = soft_joint_position_limit_factor
         self._end_effector_link_names = end_effector_link_names
         self._contact_force_threshold = contact_force_threshold
 
@@ -56,10 +60,6 @@ class BeyondMimicTask(MotionTrackingTask):
             global_observation=global_observation,
         )
         self._anchor_link_index = self._robot.get_link_indices([self._anchor_link_name])[0]
-        lower_bounds, upper_bounds = self._robot.get_joint_dof_limits()
-        self._soft_joint_position_lower_bounds, self._soft_joint_position_upper_bounds = scale_joint_position_limits(
-            lower_bounds, upper_bounds, self._soft_joint_position_limit_factor
-        )
         end_effector_link_indices = self._robot.get_link_indices(self._end_effector_link_names)
         self._end_effector_link_indices = torch.tensor(end_effector_link_indices, dtype=torch.int64, device=key_link_indices.device)
         self._penalized_contact_link_indices = torch.tensor(
@@ -68,11 +68,9 @@ class BeyondMimicTask(MotionTrackingTask):
             device=key_link_indices.device,
         )
 
-    def get_schema(self, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
+    def get_schema(self, *, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
         joint_count = self._robot.n_joint_dofs
         link_count = self._key_link_indices.numel()
-        self._noisy_observation_enabled = noisy_observation_enabled
-        assert self._noisy_observation_enabled
 
         motion_phase_size = 2 * joint_count
         anchor_error_size = 9
@@ -89,14 +87,14 @@ class BeyondMimicTask(MotionTrackingTask):
         }
         return {key: TensorSchema(shape=(size,), data_type=torch.float32) for key, size in sizes.items()}
 
-    def observation(self, state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
         motion_command = torch.cat(
             (self._reference_state.joint_dof_positions, self._reference_state.joint_dof_velocities),
             dim=-1,
         )
 
         for noisy_observation in [True, False]:
-            observed_state = noisy_state if noisy_observation else state
+            observed_state = noisy_state if noisy_observation else robot_state
 
             anchor_position = observed_state.world_link_positions[..., self._anchor_link_index, :]
             anchor_rotation = observed_state.world_link_rotations[..., self._anchor_link_index, :]
@@ -128,8 +126,8 @@ class BeyondMimicTask(MotionTrackingTask):
                     dim=-1,
                 )
 
-        world_link_positions = state.world_link_positions.index_select(-2, self._key_link_indices)
-        world_link_rotations = state.world_link_rotations.index_select(-2, self._key_link_indices)
+        world_link_positions = robot_state.world_link_positions.index_select(-2, self._key_link_indices)
+        world_link_rotations = robot_state.world_link_rotations.index_select(-2, self._key_link_indices)
         link_positions = transform_by_quat(
             world_link_positions - anchor_position.unsqueeze(-2), inverse_anchor_rotation.unsqueeze(-2)
         ).flatten(start_dim=-2)
@@ -213,7 +211,8 @@ class BeyondMimicTask(MotionTrackingTask):
         )
         body_angular_velocity_reward = torch.exp(-body_angular_velocity_error / 3.14**2)
 
-        action_change_penalty = (current_action - previous_action).square().sum(dim=-1)
+        action_change = (current_action - previous_action) / self._robot.control_action_scale
+        action_change_penalty = action_change.square().sum(dim=-1)
 
         joint_position_limit_penalty = (
             (self._soft_joint_position_lower_bounds - state.joint_dof_positions).clamp_min(0.0)
@@ -297,6 +296,7 @@ class BeyondMimicTask(MotionTrackingTask):
 
         terminal = self._compute_terminal(state, self._reference_state)
         self._reference_robot.record_failures(terminal)
+        terminal = terminal | self._motion_finished
         return TaskFeedback(
             reward=reward,
             terminal=terminal,

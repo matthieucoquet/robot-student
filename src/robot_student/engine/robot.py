@@ -133,17 +133,25 @@ class Robot(KinematicRobot):
                 self._entity.set_dofs_kv(velocity_gain_values, self._controlled_dof_indices)
                 self._entity.set_dofs_armature(armature_values, self._controlled_dof_indices)
                 self._entity.set_dofs_force_range(force_lower_bounds, force_upper_bounds, self._controlled_dof_indices)
-                self._inverse_maximum_control_forces = torch.tensor(
+                maximum_control_forces_tensor = torch.tensor(
                     maximum_control_forces,
                     device=gs.device,
                     dtype=torch.float32,
-                ).reciprocal_()
+                )
+                position_gains = torch.tensor(position_gain_values, device=gs.device, dtype=torch.float32)
+                self._control_action_scale = 0.25 * maximum_control_forces_tensor / position_gains  # BeyondMimic formula
+                self._inverse_maximum_control_forces = maximum_control_forces_tensor.reciprocal_()
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
     @property
     def control_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
         return self._control_lower_bounds, self._control_upper_bounds
+
+    @property
+    def control_action_scale(self) -> torch.Tensor:
+        """Position scale corresponding to one quarter of the configured maximum effort."""
+        return self._control_action_scale
 
     @property
     def default_control(self) -> torch.Tensor:
@@ -195,12 +203,13 @@ class Robot(KinematicRobot):
 
     def apply_control(self, control: torch.Tensor) -> None:
         torch.add(control, self._control_position_offsets, out=self._control_targets)
-        torch.clamp(
-            self._control_targets,
-            min=self._control_lower_bounds,
-            max=self._control_upper_bounds,
-            out=self._control_targets,
-        )
+        if self._control_mode.action_limit_scale is not None:
+            torch.clamp(
+                self._control_targets,
+                min=self._control_lower_bounds,
+                max=self._control_upper_bounds,
+                out=self._control_targets,
+            )
 
         self._entity.control_dofs_position(self._control_targets, self._controlled_dof_indices)
 
@@ -211,6 +220,7 @@ def scale_joint_position_limits(
     scale: float | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if scale is None:
+        # Keep finite bounds for the action schema even when target clamping is disabled.
         return lower_bounds, upper_bounds
 
     bound_centers = (lower_bounds + upper_bounds) * 0.5
