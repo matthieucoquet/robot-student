@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import prod
+import math
 
 import torch
 from tensordict import TensorDict, TensorDictBase
@@ -43,6 +44,7 @@ class PolicyConfiguration:
     action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS
     position_target_mode: PositionTargetMode = PositionTargetMode.ABSOLUTE
     standard_deviation: float = 0.1
+    learn_standard_deviation: bool = False
     normalization_clip: float | None = 10.0
 
 
@@ -62,7 +64,17 @@ class Policy(nn.Module):
         action_schema = schema.actions[self.action_key]
 
         self.action_bound_enforcement = configuration.action_bound_enforcement
-        self.standard_deviation = configuration.standard_deviation
+
+        log_standard_deviation = torch.full(
+            action_schema.shape,
+            math.log(configuration.standard_deviation),
+            device=device,
+            dtype=action_schema.data_type,
+        )
+        if configuration.learn_standard_deviation:
+            self.log_standard_deviation = nn.Parameter(log_standard_deviation)
+        else:
+            self.register_buffer("log_standard_deviation", log_standard_deviation)
 
         lower_bounds, upper_bounds = action_schema.bounds
         lower_bounds = lower_bounds.to(device=device, dtype=action_schema.data_type)
@@ -118,7 +130,7 @@ class Policy(nn.Module):
     def create_distribution(self, mean: torch.Tensor) -> ActionDistribution:
         return ActionDistribution(
             mean + self.normalized_mean_offset,
-            standard_deviation=self.standard_deviation,
+            standard_deviation=self.log_standard_deviation.exp(),
             action_bound_enforcement=self.action_bound_enforcement,
             action_offset=self.action_offset,
             action_scale=self.action_scale,

@@ -28,7 +28,11 @@ class GenesisEngine:
     ) -> None:
         super().__init__()
 
-        gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
+        backend = gs.cuda if cuda_backend else gs.cpu
+        if not gs._initialized:
+            gs.init(backend=backend, seed=seed)
+        elif gs.backend != backend:
+            raise ValueError(f"Genesis is already initialized with backend {gs.backend}; requested {backend}")
 
         self.environment_count = environment_count
         self.simulation_frequency = simulation_frequency

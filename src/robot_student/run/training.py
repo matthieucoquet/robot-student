@@ -15,6 +15,7 @@ from robot_student.util.seed import set_seed
 from robot_student.util.storage import MetricCheckpointStorage, RunContext, managed_storage
 
 from .environment_factory import EnvironmentFactory
+from .periodic_evaluation import EvaluationConfiguration, PolicyEvaluator
 
 ScalarMetric = int | float | torch.Tensor
 StoredScalarMetric = int | float
@@ -46,6 +47,7 @@ class Training:
     debug_level: int = logging.DEBUG
     run_storage: MetricCheckpointStorage
     profiling: ProfilingConfiguration | None = None
+    evaluation: EvaluationConfiguration | None = None
 
     def _setup(self):
         configure_logging(self.debug_level)
@@ -54,6 +56,15 @@ class Training:
         self._engine = self.environment_factory.create_engine(use_cuda=self.use_cuda, seed=self.seed)
         self._environment = self.environment_factory.create_environment(engine=self._engine)
         self._learner = self.learner_factory.create(environment=self._environment)
+        self._evaluator = (
+            PolicyEvaluator(
+                self.evaluation,
+                policy_configuration=self.learner_factory.configuration.policy,
+                use_cuda=self.use_cuda,
+            )
+            if self.evaluation is not None
+            else None
+        )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         if self.run_id is None:
@@ -80,15 +91,17 @@ class Training:
             self._learner.train()
 
             with self._managed_profiler() as profiler:
-                for i in range(self.iteration_count):
+                for i in range(1, self.iteration_count + 1):
                     metrics = self._learner.update()
-
                     if i % self.metric_log_interval == 0:
                         self._log_metrics(metrics, i)
-
-                    if i % self.checkpoint_interval == 0 or i == self.iteration_count - 1:
-                        self._logger.debug(f"Saving checkpoint at interval {i}")
+                    if i % self.checkpoint_interval == 0 or i == self.iteration_count:
+                        self._logger.debug(f"Saving checkpoint after {i} updates")
                         self.run_storage.save(self._learner.checkpoint(), i)
+                        if self._evaluator is not None:
+                            self._logger.info("Evaluating policy after %s updates", i)
+                            metrics = self._evaluator.evaluate(self._learner.policy)
+                            self._log_metrics(metrics, i)
 
                     if profiler is not None:
                         profiler.step()

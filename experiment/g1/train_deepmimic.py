@@ -1,6 +1,8 @@
 import logging
+from dataclasses import replace
 
-from robot_student.run import Training
+from robot_student.motion import ReferenceSampling
+from robot_student.run import EvaluationConfiguration, Training
 from robot_student.util import WeightsAndBiasesStorage
 
 from .environment.environment import DeepMimicEnvironmentFactory
@@ -8,6 +10,19 @@ from .learner import get_ppo_factory
 
 if __name__ == "__main__":
     environment = DeepMimicEnvironmentFactory(headless=True, environment_count=2048)
+    evaluation = EvaluationConfiguration(
+        environment_factory=replace(
+            environment,
+            environment_count=64,
+            headless=True,
+            reference_sampling=ReferenceSampling.ZERO,
+            show_reference_motion=False,
+            reset_perturbation_configuration=None,
+        ),
+        seed=0,
+        maximum_steps=1_000,
+    )
+
     learner = get_ppo_factory(
         actor_observation_keys=("proprioception", "target"),
         critic_observation_keys=("proprioception", "target"),
@@ -35,6 +50,7 @@ if __name__ == "__main__":
         checkpoint_interval=250,
         metric_log_interval=25,
         environment_factory=environment,
+        evaluation=evaluation,
         learner_factory=learner,
         run_storage=weights_and_biases_storage,
         profiling=None,

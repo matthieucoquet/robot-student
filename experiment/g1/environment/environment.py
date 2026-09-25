@@ -142,6 +142,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
     reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
     control_frequency: int = 50
     simulation_frequency: int = 200
+    enable_randomization: bool = True
 
     def create_environment(
         self,
@@ -212,7 +213,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             motion_library=motion_library,
             show_reference_motion=self.show_reference_motion,
             reference_motion_offset=self.reference_motion_offset,
-            reset_perturbation_configuration=reset_perturbation_configuration,
+            reset_perturbation_configuration=reset_perturbation_configuration if self.enable_randomization else None,
             anchor_link_name=anchor_link_name,
         )
 
@@ -224,7 +225,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
             key_link_names=key_link_names,
-            noise_configuration=robot_state_noise,
-            domain_randomization_configuration=domain_randomization_configuration,
-            push_configuration=push_configuration,
+            noise_configuration=robot_state_noise if self.enable_randomization else None,
+            domain_randomization_configuration=domain_randomization_configuration if self.enable_randomization else None,
+            push_configuration=push_configuration if self.enable_randomization else None,
         )

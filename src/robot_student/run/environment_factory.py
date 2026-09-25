@@ -20,7 +20,7 @@ class EnvironmentFactory(ABC):
         if self.simulation_frequency % self.control_frequency != 0:
             raise ValueError("simulation_frequency must be an integer multiple of control_frequency")
 
-    def create_engine(self, *, use_cuda: bool, seed: int) -> Environment:
+    def create_engine(self, *, use_cuda: bool, seed: int) -> GenesisEngine:
         engine = GenesisEngine(
             cuda_backend=use_cuda,
             show_viewer=not self.headless,

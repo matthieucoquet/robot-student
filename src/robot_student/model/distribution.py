@@ -8,7 +8,7 @@ class ActionDistribution(torch.distributions.Independent):
     def __init__(
         self,
         mean: torch.Tensor,
-        standard_deviation: float,
+        standard_deviation: torch.Tensor,
         action_offset: torch.Tensor,
         action_scale: torch.Tensor,
         action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS,
