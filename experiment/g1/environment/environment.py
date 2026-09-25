@@ -6,6 +6,7 @@ from robot_student.engine.robot import CenterOfMassRandomization, DomainRandomiz
 from robot_student.engine.robot_state import NoiseConfiguration, UniformNoise
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
+from robot_student.environment.robot_environment import PushConfiguration
 from robot_student.environment.task.beyond_mimic_task import BeyondMimicTask
 from robot_student.environment.task.deep_mimic_task import DeepMimicTask
 from robot_student.environment.task.motion_tracking_task import ResetPerturbationConfiguration
@@ -139,19 +140,8 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
     reference_sampling: ReferenceSampling = ReferenceSampling.ADAPTIVE
     show_reference_motion: bool = False
     reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    reset_perturbation_configuration: ResetPerturbationConfiguration | None = None
     control_frequency: int = 50
     simulation_frequency: int = 200
-    domain_randomization_configuration: DomainRandomizationConfiguration | None = DomainRandomizationConfiguration(
-        friction_ratio_range=(0.3, 1.6),
-        default_joint_position_offset_range=(-0.01, 0.01),
-        center_of_mass=CenterOfMassRandomization(
-            link_name="torso_link",
-            x_range=(-0.025, 0.025),
-            y_range=(-0.05, 0.05),
-            z_range=(-0.05, 0.05),
-        ),
-    )
 
     def create_environment(
         self,
@@ -194,12 +184,35 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             world_link_rotations=UniformNoise(half_width=0.05),
         )
 
+        reset_perturbation_configuration = ResetPerturbationConfiguration(
+            root_position_half_width=(0.05, 0.05, 0.01),
+            root_rotation_half_width=(0.1, 0.1, 0.2),
+            root_linear_velocity_half_width=(0.5, 0.5, 0.2),
+            root_angular_velocity_half_width=(0.52, 0.52, 0.78),
+            joint_position_half_width=0.1,
+        )
+
+        push_configuration = PushConfiguration(
+            interval_seconds=2.0, linear_velocity_half_width=(0.5, 0.5, 0.2), angular_velocity_half_width=(0.52, 0.52, 0.78)
+        )
+
+        domain_randomization_configuration = DomainRandomizationConfiguration(
+            friction_ratio_range=(0.3, 1.6),
+            default_joint_position_offset_range=(-0.01, 0.01),
+            center_of_mass=CenterOfMassRandomization(
+                link_name="torso_link",
+                x_range=(-0.025, 0.025),
+                y_range=(-0.05, 0.05),
+                z_range=(-0.05, 0.05),
+            ),
+        )
+
         task = BeyondMimicTask(
             xml_path=mjcf_path,
             motion_library=motion_library,
             show_reference_motion=self.show_reference_motion,
             reference_motion_offset=self.reference_motion_offset,
-            reset_perturbation_configuration=self.reset_perturbation_configuration,
+            reset_perturbation_configuration=reset_perturbation_configuration,
             anchor_link_name=anchor_link_name,
         )
 
@@ -212,5 +225,6 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             initial_pose=initial_pose,
             key_link_names=key_link_names,
             noise_configuration=robot_state_noise,
-            domain_randomization_configuration=self.domain_randomization_configuration,
+            domain_randomization_configuration=domain_randomization_configuration,
+            push_configuration=push_configuration,
         )

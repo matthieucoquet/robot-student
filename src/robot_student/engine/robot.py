@@ -3,7 +3,7 @@ from dataclasses import dataclass, fields
 import genesis as gs
 import torch
 from genesis.engine.entities import RigidEntity
-from genesis.utils.geom import transform_quat_by_quat, xyz_to_quat
+from genesis.utils.geom import inv_transform_by_quat, transform_quat_by_quat, xyz_to_quat
 
 from robot_student.engine.control_mode import ControlMode, PositionControlMode
 from robot_student.engine.robot_state import NoiseConfiguration, RobotState
@@ -71,6 +71,18 @@ class Robot(KinematicRobot):
             for axis, bounds in enumerate((center_of_mass.x_range, center_of_mass.y_range, center_of_mass.z_range)):
                 offsets[..., axis].uniform_(*bounds)
             self._entity.set_COM_shift(offsets, links_idx_local=center_of_mass_link_indices)
+
+    @torch.no_grad()
+    def add_root_velocity(self, linear_velocity_offset: torch.Tensor, angular_velocity_offset: torch.Tensor) -> None:
+        """Add world-frame velocity offsets, each shaped (environment_count, 3), in m/s and rad/s respectively."""
+        if self.n_root_dofs != 6:
+            raise ValueError("Root velocity offsets require a robot with a free root joint")
+        root_dof_indices = (0, 1, 2, 3, 4, 5)
+        root_velocities = self._entity.get_dofs_velocity(dofs_idx_local=root_dof_indices)
+        root_rotation = self._entity.get_qpos(qs_idx_local=(3, 4, 5, 6))
+        root_velocities[..., :3].add_(linear_velocity_offset)
+        root_velocities[..., 3:].add_(inv_transform_by_quat(angular_velocity_offset, root_rotation))
+        self._entity.set_dofs_velocity(root_velocities, dofs_idx_local=root_dof_indices)
 
     def sample_noisy_observation(self, state: RobotState) -> RobotState:
         if not self.noisy_observation_enabled:

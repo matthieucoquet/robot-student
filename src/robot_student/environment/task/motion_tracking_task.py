@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+from genesis.utils.geom import transform_quat_by_quat, xyz_to_quat
 
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.engine.robot import Robot, scale_joint_position_limits
-from robot_student.engine.robot_state import RobotState
+from robot_student.engine.robot_state import GeneralizedRobotState, RobotState
 from robot_student.environment.task.task import Task
 from robot_student.motion import MotionLibrary, ReferenceRobot
 
@@ -13,7 +14,7 @@ from robot_student.motion import MotionLibrary, ReferenceRobot
 @dataclass(frozen=True, kw_only=True, slots=True)
 class ResetPerturbationConfiguration:
     root_position_half_width: tuple[float, float, float]  # World x, y, z in meters.
-    root_rotation_half_width: tuple[float, float, float]  # Roll, pitch, yaw in radians.
+    root_rotation_half_width: tuple[float, float, float]  # World-frame roll, pitch, yaw in radians.
     root_linear_velocity_half_width: tuple[float, float, float]  # World x, y, z in meters per second.
     root_angular_velocity_half_width: tuple[float, float, float]  # World x, y, z in radians per second.
     joint_position_half_width: float  # Radians, applied independently to each joint.
@@ -85,10 +86,37 @@ class MotionTrackingTask(Task):
         self._reference_state.copy_environments_(environment_indices, reference_state)
         self._motion_finished.index_fill_(0, environment_indices, False)
 
-    def _apply_reset_perturbations(self, reference_state: RobotState) -> RobotState:
-        if self._reset_perturbation_configuration is None:
+    def _apply_reset_perturbations(self, reference_state: RobotState) -> GeneralizedRobotState:
+        configuration = self._reset_perturbation_configuration
+        if configuration is None:
             return reference_state
-        raise NotImplementedError("Reset perturbations are not implemented yet")
+
+        def sample_noise(value: torch.Tensor, half_width: tuple[float, float, float] | float) -> torch.Tensor:
+            return torch.empty_like(value).uniform_(-1.0, 1.0).mul_(value.new_tensor(half_width))
+
+        rotation_angles = sample_noise(reference_state.root_rotation[..., 1:], configuration.root_rotation_half_width)
+        rotation_offset = xyz_to_quat(rotation_angles, rpy=True)
+        joint_positions = sample_noise(reference_state.joint_dof_positions, configuration.joint_position_half_width)
+        joint_positions.add_(reference_state.joint_dof_positions).clamp_(
+            min=self._soft_joint_position_lower_bounds,
+            max=self._soft_joint_position_upper_bounds,
+        )
+        # set_state recomputes link states from these perturbed generalized coordinates.
+        return GeneralizedRobotState(
+            root_position=sample_noise(reference_state.root_position, configuration.root_position_half_width).add_(
+                reference_state.root_position
+            ),
+            root_rotation=transform_quat_by_quat(reference_state.root_rotation, rotation_offset),
+            joint_dof_positions=joint_positions,
+            root_velocity=sample_noise(reference_state.root_velocity, configuration.root_linear_velocity_half_width).add_(
+                reference_state.root_velocity
+            ),
+            root_angular_velocity=sample_noise(reference_state.root_angular_velocity, configuration.root_angular_velocity_half_width).add_(
+                reference_state.root_angular_velocity
+            ),
+            joint_dof_velocities=reference_state.joint_dof_velocities,
+            batch_size=reference_state.batch_size,
+        )
 
     def step(self, is_control_step: bool) -> None:
         if self._show_reference_motion:

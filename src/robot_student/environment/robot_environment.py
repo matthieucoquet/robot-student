@@ -1,4 +1,6 @@
+import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +18,13 @@ if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class PushConfiguration:
+    interval_seconds: float = 2.0
+    linear_velocity_half_width: tuple[float, float, float] = (0.5, 0.5, 0.2)  # Meters per second.
+    angular_velocity_half_width: tuple[float, float, float] = (0.52, 0.52, 0.78)  # Radians per second.
+
+
 class RobotEnvironment(Environment):
     def __init__(
         self,
@@ -30,6 +39,7 @@ class RobotEnvironment(Environment):
         *,
         noise_configuration: NoiseConfiguration | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
+        push_configuration: PushConfiguration | None = None,
     ) -> None:
         self._engine = engine
         self._task = task
@@ -78,6 +88,14 @@ class RobotEnvironment(Environment):
         self._previous_action = self._robot.default_control.expand(self.count, -1).clone()
         self._state: RobotState = self._robot.get_state()
         self._noisy_state = self._robot.sample_noisy_observation(self._state)
+        self._push_configuration = push_configuration
+        self._push_interval_steps = 0
+        if push_configuration is not None:
+            control_time_step = engine.time_step * self._simulation_steps_per_control_step
+            self._push_interval_steps = math.ceil(push_configuration.interval_seconds / control_time_step)
+            self._linear_push_half_widths = self._state.root_velocity.new_tensor(push_configuration.linear_velocity_half_width)
+            self._angular_push_half_widths = self._state.root_velocity.new_tensor(push_configuration.angular_velocity_half_width)
+        self._steps_until_push = self._push_interval_steps
 
     @property
     def device(self) -> torch.device:
@@ -94,6 +112,7 @@ class RobotEnvironment(Environment):
     @torch.no_grad()
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
+        self._steps_until_push = self._push_interval_steps
         self._previous_action.copy_(self._robot.default_control)
 
         self._engine.reset()
@@ -127,6 +146,7 @@ class RobotEnvironment(Environment):
     @torch.no_grad()
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         current_action = action["control"].detach()
+        self._apply_push()
         self._robot.apply_control(current_action)
         # This accessor evaluates the controller against the current state, so
         # sample it before advancing the state that the action applies to.
@@ -149,6 +169,22 @@ class RobotEnvironment(Environment):
         self._previous_action.copy_(current_action)
 
         return self._get_observation(), task_feedback.reward, task_feedback.terminal, truncated, task_feedback.transition_metrics
+
+    def _apply_push(self) -> None:
+        if self._push_configuration is None:
+            return
+        self._steps_until_push -= 1
+        if self._steps_until_push > 0:
+            return
+        linear_velocity_offset = self._linear_push_half_widths.new_empty((self.count, 3)).uniform_(-1.0, 1.0)
+        linear_velocity_offset.mul_(self._linear_push_half_widths)
+        angular_velocity_offset = self._angular_push_half_widths.new_empty((self.count, 3)).uniform_(-1.0, 1.0)
+        angular_velocity_offset.mul_(self._angular_push_half_widths)
+        self._robot.add_root_velocity(
+            linear_velocity_offset=linear_velocity_offset,
+            angular_velocity_offset=angular_velocity_offset,
+        )
+        self._steps_until_push = self._push_interval_steps
 
     def _compute_schema(self) -> EnvironmentSchema:
         observations = self._task.get_schema(noisy_observation_enabled=self._robot.noisy_observation_enabled)
