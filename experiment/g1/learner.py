@@ -24,6 +24,8 @@ def get_ppo_factory(
         action_key="control",
         action_bound_enforcement=ActionBoundEnforcement.NONE,
         position_target_mode=PositionTargetMode.EFFORT_SCALED_ACTION,
+        # standard_deviation=1.0,
+        # learn_standard_deviation=True
     )
 
     value_function = ValueFunctionConfiguration(

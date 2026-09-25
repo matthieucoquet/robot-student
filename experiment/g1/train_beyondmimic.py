@@ -41,14 +41,14 @@ if __name__ == "__main__":
     # )
 
     training = Training(
-        experiment_name="g1_deepmimic",
-        run_name="deepmimic_jump",
+        experiment_name="g1_beyondmimic",
+        run_name="beyondmimic_walk",
         seed=0,
         use_cuda=True,
         debug_level=logging.INFO,
         iteration_count=12_000,
-        checkpoint_interval=250,
-        metric_log_interval=25,
+        checkpoint_interval=500,
+        metric_log_interval=50,
         environment_factory=environment,
         evaluation=evaluation,
         learner_factory=learner,
