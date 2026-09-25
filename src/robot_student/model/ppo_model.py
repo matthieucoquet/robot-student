@@ -1,7 +1,7 @@
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import prod
-import math
 
 import torch
 from tensordict import TensorDict, TensorDictBase
