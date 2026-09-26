@@ -9,6 +9,7 @@ class TensorSchema:
     data_type: torch.dtype
     bounds: tuple[torch.Tensor, torch.Tensor] | None = None
     default_value: torch.Tensor | None = None
+    action_scale: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)

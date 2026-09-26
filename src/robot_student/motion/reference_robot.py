@@ -1,6 +1,7 @@
 import torch
 
-from robot_student.engine.kinematic_robot import KinematicRobot, RobotState
+from robot_student.engine.kinematic_robot import KinematicRobot
+from robot_student.engine.robot_state import RobotState
 from robot_student.motion.motion_library import MotionLibrary
 
 
@@ -24,22 +25,13 @@ class ReferenceRobot:
 
         self._step_count = torch.zeros(count, device=device, dtype=torch.int64)
 
-    def reset(self, *, random_sampling: bool, environment_indices: torch.Tensor | None = None) -> RobotState:
-        reset_count = self._motion_ids.shape[0] if environment_indices is None else environment_indices.numel()
-        if random_sampling:
-            sampled_motion_ids, sampled_motion_times = self._motion_library.sample(reset_count)
-        else:
-            sampled_motion_ids = torch.zeros(reset_count, dtype=torch.int64, device=self._motion_ids.device)
-            sampled_motion_times = torch.zeros(reset_count, dtype=torch.float32, device=self._motion_times.device)
+    def reset(self, *, environment_indices: torch.Tensor) -> RobotState:
+        reset_count = environment_indices.numel()
+        sampled_motion_ids, sampled_motion_times = self._motion_library.sample(reset_count)
 
-        if environment_indices is None:
-            self._step_count.zero_()
-            self._motion_ids.copy_(sampled_motion_ids)
-            self._motion_times.copy_(sampled_motion_times)
-        else:
-            self._step_count.index_fill_(0, environment_indices, 0)
-            self._motion_ids[environment_indices] = sampled_motion_ids
-            self._motion_times[environment_indices] = sampled_motion_times
+        self._step_count.index_fill_(0, environment_indices, 0)
+        self._motion_ids[environment_indices] = sampled_motion_ids
+        self._motion_times[environment_indices] = sampled_motion_times
 
         state = self._motion_library.get_state(sampled_motion_ids, sampled_motion_times)
         self._update_display(state, environment_indices)
@@ -59,6 +51,10 @@ class ReferenceRobot:
         motion_ids = self._motion_ids[:, None].expand_as(motion_times)
 
         return self._motion_library.get_state(motion_ids, motion_times)
+
+    def record_failures(self, failed: torch.Tensor) -> None:
+        motion_times = self._motion_times + self._step_count * self._timestep
+        self._motion_library.record_failures(self._motion_ids, motion_times, failed)
 
     def _update_display(self, state: RobotState, environment_indices: torch.Tensor | None = None) -> None:
         if self._kinematic_robot is not None:

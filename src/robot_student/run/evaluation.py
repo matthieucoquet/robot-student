@@ -76,7 +76,7 @@ class Evaluation:
 
         self._logger = logging.getLogger(__name__)
 
-    @torch.inference_mode()
+    @torch.no_grad()
     def run(self):
         self._setup()
 
@@ -90,7 +90,7 @@ class Evaluation:
             observation = self._environment.reset()
 
             try:
-                for _ in range(450):
+                for _ in range(1500):
                     if not self.environment_factory.headless and not self._engine.is_viewer_alive():
                         break
                     action = policy.sample_action(observation, stochastic=False)

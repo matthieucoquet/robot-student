@@ -1,7 +1,8 @@
 # Repository Guidelines
 
-- `robot-student` implements high-throughput PPO with PyTorch, TensorDict, and Genesis. Optimize rollout collection, environment stepping, return computation, and PPO updates.
-- `src/robot_student/` is the library; `experiment/{ant,g1}/` contains experiment code and MJCF assets; ignored outputs belong in `result/`.
+- `robot-student` implements high-throughput PPO with PyTorch, TensorDict, and Genesis. For performance work, prioritize rollout collection, environment stepping, return computation, and PPO updates.
+- `src/robot_student/` is the library; `experiment/g1/` contains experiment code and MJCF assets; ignored outputs belong in `result/`.
+- The repository includes DeepMimic motion tracking in `src/robot_student/environment/motion_tracking_environment.py` and a G1 training entry point at `experiment/g1/train_deepmimic.py`.
 - Use `uv` and Python `>=3.13,<3.14`. Install with `uv sync --locked`.
 - Before handoff, run `uv run ruff format --check` and `uv run ruff check`. Format with `uv run ruff format`; run focused tests with `uv run pytest <test-path>` when available.
 - Do not run full training or evaluation for routine verification. They generally require CUDA, may use Weights & Biases, and write artifacts.
@@ -9,4 +10,4 @@
 - In hot paths, avoid unnecessary synchronization, CPU transfers, allocations, and per-environment Python loops. Prefer batched operations and preallocated buffers.
 - Follow Ruff's 140-character line length. Use descriptive names without abbreviations; standard terms such as PPO, KL, TD, DOF, and MLP are fine.
 - Keep changes focused, preserve unrelated work, and keep documentation aligned with behavior.
-- Do not preserve backward compatibility.
+- Do not add backward-compatibility shims. When changing an interface, update all in-repository callers.

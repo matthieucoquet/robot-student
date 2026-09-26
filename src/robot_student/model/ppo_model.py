@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import prod
@@ -43,6 +44,7 @@ class PolicyConfiguration:
     action_bound_enforcement: ActionBoundEnforcement = ActionBoundEnforcement.BOUND_LOSS
     position_target_mode: PositionTargetMode = PositionTargetMode.ABSOLUTE
     standard_deviation: float = 0.1
+    learn_standard_deviation: bool = False
     normalization_clip: float | None = 10.0
 
 
@@ -62,30 +64,46 @@ class Policy(nn.Module):
         action_schema = schema.actions[self.action_key]
 
         self.action_bound_enforcement = configuration.action_bound_enforcement
-        self.standard_deviation = configuration.standard_deviation
+
+        log_standard_deviation = torch.full(
+            action_schema.shape,
+            math.log(configuration.standard_deviation),
+            device=device,
+            dtype=action_schema.data_type,
+        )
+        if configuration.learn_standard_deviation:
+            self.log_standard_deviation = nn.Parameter(log_standard_deviation)
+        else:
+            self.register_buffer("log_standard_deviation", log_standard_deviation)
 
         lower_bounds, upper_bounds = action_schema.bounds
         lower_bounds = lower_bounds.to(device=device, dtype=action_schema.data_type)
         upper_bounds = upper_bounds.to(device=device, dtype=action_schema.data_type)
+        action_offset = (lower_bounds + upper_bounds) * 0.5
+        action_scale = (upper_bounds - lower_bounds) * 0.5
 
         match configuration.position_target_mode:
             case PositionTargetMode.ABSOLUTE:
                 normalized_mean_offset = torch.zeros(action_schema.shape, device=device, dtype=action_schema.data_type)
             case PositionTargetMode.DEFAULT_POSE_OFFSET:
-                default_value = action_schema.default_value
-
-                default_value = default_value.to(device=device, dtype=action_schema.data_type)
-                bound_center = (lower_bounds + upper_bounds) * 0.5
-                bound_half_range = (upper_bounds - lower_bounds) * 0.5
-                normalized_mean_offset = (default_value - bound_center) / bound_half_range
+                default_value = action_schema.default_value.to(device=device, dtype=action_schema.data_type)
+                normalized_mean_offset = (default_value - action_offset) / action_scale
                 if torch.any(normalized_mean_offset <= -1.0) or torch.any(normalized_mean_offset >= 1.0):
                     raise ValueError("The action schema default value must lie within the action bounds")
 
                 if self.action_bound_enforcement is ActionBoundEnforcement.TANH_DISTRIBUTION:
                     normalized_mean_offset = torch.atanh(normalized_mean_offset)
+            case PositionTargetMode.EFFORT_SCALED_ACTION:
+                action_scale = action_schema.action_scale.to(device=device, dtype=action_schema.data_type)
+                action_offset = action_schema.default_value.to(device=device, dtype=action_schema.data_type)
+                normalized_mean_offset = torch.zeros_like(action_offset)
+            case _:
+                raise ValueError(f"Unsupported position target mode: {configuration.position_target_mode}")
 
         self.register_buffer("action_lower_bounds", lower_bounds)
         self.register_buffer("action_upper_bounds", upper_bounds)
+        self.register_buffer("action_offset", action_offset)
+        self.register_buffer("action_scale", action_scale)
         self.register_buffer("normalized_mean_offset", normalized_mean_offset)
 
         self.normalizer = RunningNormalization(
@@ -111,10 +129,11 @@ class Policy(nn.Module):
 
     def create_distribution(self, mean: torch.Tensor) -> ActionDistribution:
         return ActionDistribution(
-            mean + self.normalized_mean_offset,  # We could add the offset in the initial bias, but it's simpler to do it here
-            standard_deviation=self.standard_deviation,
+            mean + self.normalized_mean_offset,
+            standard_deviation=self.log_standard_deviation.exp(),
             action_bound_enforcement=self.action_bound_enforcement,
-            bounds=self.action_bounds,
+            action_offset=self.action_offset,
+            action_scale=self.action_scale,
         )
 
     def sample_action(self, observation: TensorDictBase, stochastic: bool = True) -> TensorDictBase:
@@ -133,7 +152,7 @@ class Policy(nn.Module):
     def log_prob(self, observation: TensorDictBase, action: TensorDictBase) -> tuple[torch.Tensor, torch.Tensor]:
         mean = self(observation)
         distribution = self.create_distribution(mean)
-        return distribution.log_prob(action[self.action_key]), distribution.action_mean
+        return distribution.log_prob(action[self.action_key]), distribution.action_mean, distribution.entropy()
 
     def update_normalizer(self, observation: TensorDictBase) -> None:
         combined_observation = _combine_observations(observation, self.observation_keys)

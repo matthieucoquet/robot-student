@@ -1,17 +1,16 @@
-from robot_student.environment.character_environment import CharacterEnvironment
-from robot_student.environment.character_task import CharacterTask
 from robot_student.environment.environment import Environment
-from robot_student.environment.motion_tracking_environment import DeepMimicTask, MotionTrackingEnvironment
-from robot_student.environment.run_in_direction_task import RunInDirectionTask
+from robot_student.environment.robot_environment import RobotEnvironment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
+from robot_student.environment.task.deep_mimic_task import DeepMimicTask
+from robot_student.environment.task.run_in_direction_task import RunInDirectionTask
+from robot_student.environment.task.task import Task
 
 __all__ = [
-    "CharacterEnvironment",
-    "CharacterTask",
+    "RobotEnvironment",
+    "Task",
     "DeepMimicTask",
     "Environment",
     "EnvironmentSchema",
     "RunInDirectionTask",
     "TensorSchema",
-    "MotionTrackingEnvironment",
 ]

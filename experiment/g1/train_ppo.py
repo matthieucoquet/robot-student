@@ -1,6 +1,7 @@
 import logging
+from dataclasses import replace
 
-from robot_student.run import Training
+from robot_student.run import EvaluationConfiguration, Training
 from robot_student.util import WeightsAndBiasesStorage
 
 from .environment.environment import PPOEnvironmentFactory
@@ -8,7 +9,21 @@ from .learner import get_ppo_factory
 
 if __name__ == "__main__":
     environment = PPOEnvironmentFactory(headless=True, environment_count=4096)
-    learner = get_ppo_factory(compile_models=True)
+    evaluation = EvaluationConfiguration(
+        environment_factory=replace(
+            environment,
+            environment_count=64,
+            headless=True,
+        ),
+        seed=0,
+        maximum_steps=1_000,
+    )
+
+    learner = get_ppo_factory(
+        actor_observation_keys=("proprioception",),
+        critic_observation_keys=("proprioception",),
+        compile_models=True,
+    )
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
@@ -31,6 +46,7 @@ if __name__ == "__main__":
         checkpoint_interval=100,
         metric_log_interval=10,
         environment_factory=environment,
+        evaluation=evaluation,
         learner_factory=learner,
         run_storage=weights_and_biases_storage,
         profiling=None,

@@ -5,7 +5,8 @@ import torch
 
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.kinematic_robot import KinematicRobot
-from robot_student.engine.robot import Robot
+from robot_student.engine.robot import DomainRandomizationConfiguration, Robot
+from robot_student.engine.robot_state import NoiseConfiguration
 
 
 class _MjcfCompatibleKinematicOptions(gs.options.KinematicOptions):
@@ -23,11 +24,17 @@ class GenesisEngine:
         show_viewer: bool = True,
         seed: int | None = None,
         simulation_frequency: int = 120,
+        environment_count: int = 1,
     ) -> None:
         super().__init__()
 
-        gs.init(backend=gs.cuda if cuda_backend else gs.cpu, seed=seed)
+        backend = gs.cuda if cuda_backend else gs.cpu
+        if not gs._initialized:
+            gs.init(backend=backend, seed=seed)
+        elif gs.backend != backend:
+            raise ValueError(f"Genesis is already initialized with backend {gs.backend}; requested {backend}")
 
+        self.environment_count = environment_count
         self.simulation_frequency = simulation_frequency
         self.time_step = 1.0 / simulation_frequency
         self._scene = gs.Scene(
@@ -45,16 +52,32 @@ class GenesisEngine:
     def device(self) -> torch.device:
         return gs.device
 
-    def add_robot(self, xml_path: Path, control_mode: ControlMode) -> Robot:
-        entity = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
-        robot = Robot(entity, control_mode=control_mode)
+    def add_robot(
+        self,
+        xml_path: Path,
+        control_mode: ControlMode,
+        *,
+        noise_configuration: NoiseConfiguration | None = None,
+        domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
+    ) -> Robot:
+        morph = gs.morphs.MJCF(file=str(xml_path))
+        if domain_randomization_configuration is not None and domain_randomization_configuration.center_of_mass is not None:
+            self._scene.options.rigid.batch_links_info = True
+            morph.align = False
+        entity = self._scene.add_entity(morph)
+        robot = Robot(
+            entity,
+            control_mode=control_mode,
+            noise_configuration=noise_configuration,
+            domain_randomization_configuration=domain_randomization_configuration,
+        )
         self.robots.append(robot)
 
         if self._recording_camera is not None:
             self._recording_entity = entity
             self._recording_camera.follow_entity(entity, smoothing=0.2, fix_orientation=False)
             self._recording_offset = torch.as_tensor(self._recording_position, dtype=gs.tc_float, device=gs.device) - torch.as_tensor(
-                entity.base_link.pos, dtype=gs.tc_float, device=gs.device
+                entity.base_link.desc.pos, dtype=gs.tc_float, device=gs.device
             )
 
         return robot
@@ -76,8 +99,9 @@ class GenesisEngine:
         )
         return KinematicRobot(entity)
 
-    def add_ground_plane(self) -> None:
-        self._scene.add_entity(gs.morphs.Plane())
+    def add_ground_plane(self, *, friction: float | None = None) -> None:
+        material = None if friction is None else gs.materials.Rigid(friction=friction)
+        self._scene.add_entity(gs.morphs.Plane(), material=material)
 
     def setup_recording(
         self,
@@ -103,7 +127,7 @@ class GenesisEngine:
             env_idx=environment_index,
             GUI=show_gui,
         )
-        self._scene.start_recording(
+        self._scene.add_recorder(
             data_func=self._render_recording_frame,
             rec_options=gs.recorders.VideoFile(
                 filename=str(save_to_filename),
@@ -122,10 +146,11 @@ class GenesisEngine:
             return
         self._scene.stop_recording()
 
-    def build_scene(self, environment_count: int = 1, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
-        self._scene.build(n_envs=environment_count, env_spacing=env_spacing)
+    def build_scene(self, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
+        self._scene.build(n_envs=self.environment_count, env_spacing=env_spacing)
         for robot in self.robots:
             robot.configure_control_mode()
+            robot.configure_domain_randomization(self.environment_count)
 
     def step(self) -> None:
         self._scene.step()
