@@ -24,8 +24,8 @@ def get_ppo_factory(
         action_key="control",
         action_bound_enforcement=ActionBoundEnforcement.NONE,
         position_target_mode=PositionTargetMode.EFFORT_SCALED_ACTION,
-        # standard_deviation=1.0,
-        # learn_standard_deviation=True
+        standard_deviation=1.0,
+        learn_standard_deviation=True,
     )
 
     value_function = ValueFunctionConfiguration(
@@ -53,5 +53,6 @@ def get_ppo_factory(
             value_epoch_count=2,
             value_batch_size=2,
             rollout_length=32,
+            entropy_coefficient=0.005,
         )
     )

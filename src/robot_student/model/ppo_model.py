@@ -152,7 +152,7 @@ class Policy(nn.Module):
     def log_prob(self, observation: TensorDictBase, action: TensorDictBase) -> tuple[torch.Tensor, torch.Tensor]:
         mean = self(observation)
         distribution = self.create_distribution(mean)
-        return distribution.log_prob(action[self.action_key]), distribution.action_mean
+        return distribution.log_prob(action[self.action_key]), distribution.action_mean, distribution.entropy()
 
     def update_normalizer(self, observation: TensorDictBase) -> None:
         combined_observation = _combine_observations(observation, self.observation_keys)

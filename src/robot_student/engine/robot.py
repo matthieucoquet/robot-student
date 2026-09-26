@@ -70,7 +70,9 @@ class Robot(KinematicRobot):
             offsets = torch.empty((environment_count, 1, 3), dtype=gs.tc_float, device=gs.device)
             for axis, bounds in enumerate((center_of_mass.x_range, center_of_mass.y_range, center_of_mass.z_range)):
                 offsets[..., axis].uniform_(*bounds)
-            self._entity.set_COM_shift(offsets, links_idx_local=center_of_mass_link_indices)
+            original_center_of_mass = self._entity.get_links_COM(links_idx_local=center_of_mass_link_indices)
+            offsets.add_(original_center_of_mass)
+            self._entity.set_links_COM(offsets, links_idx_local=center_of_mass_link_indices)
 
     @torch.no_grad()
     def add_root_velocity(self, linear_velocity_offset: torch.Tensor, angular_velocity_offset: torch.Tensor) -> None:

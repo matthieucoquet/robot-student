@@ -60,7 +60,11 @@ class GenesisEngine:
         noise_configuration: NoiseConfiguration | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
     ) -> Robot:
-        entity = self._scene.add_entity(gs.morphs.MJCF(file=str(xml_path)))
+        morph = gs.morphs.MJCF(file=str(xml_path))
+        if domain_randomization_configuration is not None and domain_randomization_configuration.center_of_mass is not None:
+            self._scene.options.rigid.batch_links_info = True
+            morph.align = False
+        entity = self._scene.add_entity(morph)
         robot = Robot(
             entity,
             control_mode=control_mode,
@@ -73,7 +77,7 @@ class GenesisEngine:
             self._recording_entity = entity
             self._recording_camera.follow_entity(entity, smoothing=0.2, fix_orientation=False)
             self._recording_offset = torch.as_tensor(self._recording_position, dtype=gs.tc_float, device=gs.device) - torch.as_tensor(
-                entity.base_link.pos, dtype=gs.tc_float, device=gs.device
+                entity.base_link.desc.pos, dtype=gs.tc_float, device=gs.device
             )
 
         return robot
@@ -123,7 +127,7 @@ class GenesisEngine:
             env_idx=environment_index,
             GUI=show_gui,
         )
-        self._scene.start_recording(
+        self._scene.add_recorder(
             data_func=self._render_recording_frame,
             rec_options=gs.recorders.VideoFile(
                 filename=str(save_to_filename),

@@ -34,6 +34,7 @@ class PPOConfiguration:
     policy_batch_size: int = 4
     policy_epoch_count: int = 5
     clip_ratio: float = 0.2
+    entropy_coefficient: float = 0.0
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -74,6 +75,7 @@ class PPO:
         self._policy_batch_size = configuration.policy_batch_size
         self._policy_epoch_count = configuration.policy_epoch_count
         self._clip_ratio = configuration.clip_ratio
+        self._entropy_coefficient = configuration.entropy_coefficient
         self._action_bound_enforcement = self._policy.action_bound_enforcement
 
         self._logger = logging.getLogger(__name__)
@@ -191,13 +193,16 @@ class PPO:
         log_loss_sum = torch.zeros((), device=observations.device)
         log_clip_fraction_sum = torch.zeros((), device=observations.device)
         log_approximate_kl_sum = torch.zeros((), device=observations.device)
+        entropy_enabled = self._entropy_coefficient != 0.0
+        if entropy_enabled:
+            log_entropy_sum = torch.zeros((), device=observations.device)
         action_bound_loss_enabled = self._action_bound_enforcement is ActionBoundEnforcement.BOUND_LOSS
         if action_bound_loss_enabled:
             log_action_bound_loss_sum = torch.zeros((), device=observations.device)
         minibatch_count = 0
 
         for minibatch_indices in self._rollout_buffer.get_minibatches(self._policy_batch_size, self._policy_epoch_count):
-            log_probability, action_mean = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
+            log_probability, action_mean, entropy = self._policy.log_prob(observations[minibatch_indices], actions[minibatch_indices])
 
             log_ratio = log_probability - old_log_probabilities[minibatch_indices]
             ratio = torch.exp(log_ratio)
@@ -211,6 +216,10 @@ class PPO:
                 loss = loss + action_bound_loss
                 log_action_bound_loss_sum += action_bound_loss.detach().mean()
             loss = loss.mean()
+            if entropy_enabled:
+                entropy = entropy.mean()
+                loss = loss - self._entropy_coefficient * entropy
+                log_entropy_sum += entropy.detach()
 
             self._policy_optimizer.zero_grad()
             loss.backward()
@@ -228,6 +237,8 @@ class PPO:
         }
         if action_bound_loss_enabled:
             metrics["train/action_bound_loss"] = log_action_bound_loss_sum / minibatch_count
+        if entropy_enabled:
+            metrics["train/policy_entropy"] = log_entropy_sum / minibatch_count
         return metrics
 
     def _compute_action_bound_loss(self, action_mean: torch.Tensor) -> torch.Tensor:
