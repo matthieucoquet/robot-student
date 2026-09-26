@@ -4,7 +4,9 @@ FROM python:3.13-slim-trixie
 # Triton and TorchInductor compile native code at runtime.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
+        build-essential \        
+        ca-certificates \
+        curl \
         libegl1 \
         libgl1 \
         libgl1-mesa-dri \
