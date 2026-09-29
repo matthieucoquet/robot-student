@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
@@ -37,7 +36,7 @@ class DeepMimicTask(MotionTrackingTask):
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
 
-    def get_schema(self, *, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
+    def get_schema(self) -> dict[str, TensorSchema]:
         key_link_position_size = 3 * self._key_link_indices.numel()
         target_step_size = 3 + 6 + self._robot.n_joint_dofs + key_link_position_size
         target_size = self._target_steps.numel() * target_step_size
@@ -133,7 +132,14 @@ class DeepMimicTask(MotionTrackingTask):
         terminal.logical_or_(self._motion_finished)
         return terminal
 
-    def compute_feedback(self, state: RobotState, **kwargs: Any) -> TaskFeedback:
+    def compute_feedback(
+        self,
+        state: RobotState,
+        *,
+        normalized_control_forces: torch.Tensor,
+        current_action: torch.Tensor,
+        previous_action: torch.Tensor,
+    ) -> TaskFeedback:
         reward, reward_components = self._compute_reward(state, self._reference_state)
         pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward = reward_components
         terminal = self._compute_terminal(state, self._reference_state)

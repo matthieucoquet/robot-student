@@ -16,10 +16,10 @@ if __name__ == "__main__":
         reference_motion_offset=(0.0, 1.0, 0.0),
         enable_randomization=True,
     )
-    learner = get_ppo_factory(
+    learner_configuration = get_ppo_factory(
         actor_observation_keys=("actor",),
         critic_observation_keys=("critic",),
-    )
+    ).configuration
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         use_cuda=False,
         debug_level=logging.INFO,
         environment_factory=environment,
-        learner_factory=learner,
+        policy_configuration=learner_configuration.policy,
         run_storage=weights_and_biases_storage,
         recording=recording_configuration,
     )

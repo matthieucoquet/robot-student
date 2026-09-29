@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import torch
 
@@ -47,8 +47,15 @@ class Task(ABC):
         return None
 
     @abstractmethod
-    def compute_feedback(self, state: RobotState, **kwargs: Any) -> TaskFeedback:
-        """Compute reward, termination, and metrics from the robot state and task-specific inputs."""
+    def compute_feedback(
+        self,
+        state: RobotState,
+        *,
+        normalized_control_forces: torch.Tensor,
+        current_action: torch.Tensor,
+        previous_action: torch.Tensor,
+    ) -> TaskFeedback:
+        """Compute reward, termination, and metrics, using the inputs relevant to this task."""
 
     @abstractmethod
     def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:

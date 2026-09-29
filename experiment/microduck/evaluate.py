@@ -11,10 +11,10 @@ if __name__ == "__main__":
         headless=False,
         environment_count=1,
     )
-    learner = get_ppo_factory(
+    learner_configuration = get_ppo_factory(
         actor_observation_keys=("proprioception",),
         critic_observation_keys=("proprioception",),
-    )
+    ).configuration
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
@@ -28,7 +28,7 @@ if __name__ == "__main__":
         use_cuda=False,
         debug_level=logging.INFO,
         environment_factory=environment,
-        learner_factory=learner,
+        policy_configuration=learner_configuration.policy,
         run_storage=weights_and_biases_storage,
         recording=recording_configuration,
     )

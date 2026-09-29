@@ -1,6 +1,5 @@
 import math
 from collections.abc import Sequence
-from typing import Any
 
 import torch
 
@@ -43,7 +42,7 @@ class RunInDirectionTask(Task):
         self._default_joint_positions = torch.tensor(default_joint_positions, device=device, dtype=torch.float32)
         self._minimum_healthy_height, self._maximum_healthy_height = height_range
 
-    def get_schema(self, *, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
+    def get_schema(self) -> dict[str, TensorSchema]:
         return {"proprioception": proprioception_schema(self._robot.n_joint_dofs, self._key_link_indices.numel())}
 
     def initialize(
@@ -71,8 +70,10 @@ class RunInDirectionTask(Task):
     def compute_feedback(
         self,
         state: RobotState,
+        *,
         normalized_control_forces: torch.Tensor,
-        **kwargs: Any,
+        current_action: torch.Tensor,
+        previous_action: torch.Tensor,
     ) -> TaskFeedback:
         root_height = state.root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height

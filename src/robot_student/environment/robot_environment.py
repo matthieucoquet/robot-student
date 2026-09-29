@@ -187,7 +187,7 @@ class RobotEnvironment(Environment):
         self._steps_until_push = self._push_interval_steps
 
     def _compute_schema(self) -> EnvironmentSchema:
-        observations = self._task.get_schema(noisy_observation_enabled=self._robot.noisy_observation_enabled)
+        observations = self._task.get_schema()
 
         return EnvironmentSchema(
             observations=observations,

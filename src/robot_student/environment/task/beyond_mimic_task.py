@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 
 import torch
 from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_quat, transform_quat_by_quat
@@ -68,7 +67,7 @@ class BeyondMimicTask(MotionTrackingTask):
             device=key_link_indices.device,
         )
 
-    def get_schema(self, *, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
+    def get_schema(self) -> dict[str, TensorSchema]:
         joint_count = self._robot.n_joint_dofs
         link_count = self._key_link_indices.numel()
 
@@ -271,9 +270,9 @@ class BeyondMimicTask(MotionTrackingTask):
         self,
         state: RobotState,
         *,
+        normalized_control_forces: torch.Tensor,
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
-        **kwargs: Any,
     ) -> TaskFeedback:
         reward, reward_components = self._compute_reward(
             state,
