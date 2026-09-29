@@ -105,6 +105,13 @@ class Robot(KinematicRobot):
 
     def _setup_controlled_joints(self) -> None:
         match self._control_mode:
+            case PositionControlMode(joints=None):
+                # If joints is set to None, the actuator used in the mjcf are used
+                self._controlled_joints = [
+                    joint for joint in self._entity.joints if joint.n_dofs > 0 and (joint.desc.dofs_act_gain != 0).any()
+                ]
+                if not self._controlled_joints:
+                    raise ValueError("No actuated joints found in the model; provide explicit PositionControlSettings")
             case PositionControlMode(joints=joint_settings):
                 available_joint_names = {joint.name for joint in self._entity.joints if joint.n_dofs > 0}
                 invalid_joint_names = joint_settings.keys() - available_joint_names
@@ -122,18 +129,18 @@ class Robot(KinematicRobot):
 
     def configure_control_mode(self) -> None:
         match self._control_mode:
+            case PositionControlMode(joints=None):
+                pass
             case PositionControlMode(joints=joint_settings):
                 position_gain_values = []
                 velocity_gain_values = []
                 armature_values = []
                 force_lower_bounds = []
                 force_upper_bounds = []
-                maximum_control_forces = []
 
                 for joint in self._controlled_joints:
                     settings = joint_settings[joint.name]
                     force_lower_bound, force_upper_bound = settings.force_range
-                    maximum_control_force = max(abs(force_lower_bound), abs(force_upper_bound))
 
                     for _ in joint.dofs_idx_local:
                         position_gain_values.append(settings.kp)
@@ -141,22 +148,24 @@ class Robot(KinematicRobot):
                         armature_values.append(settings.armature)
                         force_lower_bounds.append(force_lower_bound)
                         force_upper_bounds.append(force_upper_bound)
-                        maximum_control_forces.append(maximum_control_force)
 
                 self._entity.set_dofs_kp(position_gain_values, self._controlled_dof_indices)
                 self._entity.set_dofs_kv(velocity_gain_values, self._controlled_dof_indices)
                 self._entity.set_dofs_armature(armature_values, self._controlled_dof_indices)
                 self._entity.set_dofs_force_range(force_lower_bounds, force_upper_bounds, self._controlled_dof_indices)
-                maximum_control_forces_tensor = torch.tensor(
-                    maximum_control_forces,
-                    device=gs.device,
-                    dtype=torch.float32,
-                )
-                position_gains = torch.tensor(position_gain_values, device=gs.device, dtype=torch.float32)
-                self._control_action_scale = 0.25 * maximum_control_forces_tensor / position_gains  # BeyondMimic formula
-                self._inverse_maximum_control_forces = maximum_control_forces_tensor.reciprocal_()
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
+
+        position_gains = self._entity.get_dofs_kp(self._controlled_dof_indices)
+        force_lower_bounds, force_upper_bounds = self._entity.get_dofs_force_range(self._controlled_dof_indices)
+        # Controller settings are shared across environments at configuration time.
+        if position_gains.ndim > 1:
+            position_gains = position_gains[0]
+        if force_lower_bounds.ndim > 1:
+            force_lower_bounds, force_upper_bounds = force_lower_bounds[0], force_upper_bounds[0]
+        maximum_control_forces = torch.maximum(force_lower_bounds.abs(), force_upper_bounds.abs())
+        self._control_action_scale = 0.25 * maximum_control_forces / position_gains  # BeyondMimic formula
+        self._inverse_maximum_control_forces = maximum_control_forces.reciprocal_()
 
     @property
     def control_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:

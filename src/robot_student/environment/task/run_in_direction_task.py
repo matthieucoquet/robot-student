@@ -81,16 +81,16 @@ class RunInDirectionTask(Task):
 
         planar_velocity = state.root_velocity[..., :2]
         target_velocity_error = torch.linalg.vector_norm(planar_velocity - self._target_velocity, dim=-1)
-        target_velocity_reward = target_velocity_error.mul(2.0).neg_().exp_()
+        target_velocity_reward = target_velocity_error.mul(10.0).neg_().exp_()
 
         target_height_error = root_height - self._target_height
-        target_height_reward = target_height_error.clamp(max=0.0).abs_().mul_(5.0).neg_().exp_()
+        target_height_reward = target_height_error.clamp(max=0.0).abs_().mul_(25.0).neg_().exp_()
 
         facing_direction_reward = torch.cos(heading_angle(state.root_rotation) - self._direction_heading)
 
         control_cost = torch.mean(normalized_control_forces.square(), dim=-1)
         pose_cost = torch.mean((state.joint_dof_positions - self._default_joint_positions).square(), dim=-1)
-        stay_alive_reward = root_height_is_healthy * 0.1
+        stay_alive_reward = root_height_is_healthy * 0.05
         reward = (
             stay_alive_reward
             + self._target_speed_weight * target_velocity_reward
