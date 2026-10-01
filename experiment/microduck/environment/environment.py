@@ -1,10 +1,8 @@
 from dataclasses import dataclass
-from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
-
 from robot_student.run.environment_factory import EnvironmentFactory
 
 from .robot_configuration import microduck_configuration
@@ -12,14 +10,52 @@ from .robot_configuration import microduck_configuration
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class PPOEnvironmentFactory(EnvironmentFactory):
+    control_frequency: int = 50
+    simulation_frequency: int = 200
+
     def create_environment(
         self,
         engine: GenesisEngine,
     ) -> Environment:
         mjcf_path, control_mode, initial_pose, initial_joint_positions = microduck_configuration()
 
+        # robot_state_noise = NoiseConfiguration(
+        #     root_velocity=UniformNoise(half_width=0.5),
+        #     root_angular_velocity=UniformNoise(half_width=0.2),
+        #     joint_dof_positions=UniformNoise(half_width=0.01),
+        #     joint_dof_velocities=UniformNoise(half_width=0.5),
+        #     world_link_positions=UniformNoise(half_width=0.25),
+        #     world_link_rotations=UniformNoise(half_width=0.05),
+        # )
+
+        # reset_perturbation_configuration = ResetPerturbationConfiguration(
+        #     root_position_half_width=(0.05, 0.05, 0.01),
+        #     root_rotation_half_width=(0.1, 0.1, 0.2),
+        #     root_linear_velocity_half_width=(0.5, 0.5, 0.2),
+        #     root_angular_velocity_half_width=(0.52, 0.52, 0.78),
+        #     joint_position_half_width=0.1,
+        # )
+
+        # push_configuration = PushConfiguration(
+        #     interval_seconds=2.0, linear_velocity_half_width=(0.5, 0.5, 0.2), angular_velocity_half_width=(0.52, 0.52, 0.78)
+        # )
+
+        # domain_randomization_configuration = DomainRandomizationConfiguration(
+        #     friction_ratio_range=(0.3, 1.6),
+        #     default_joint_position_offset_range=(-0.01, 0.01),
+        #     center_of_mass=CenterOfMassRandomization(
+        #         link_name="torso_link",
+        #         x_range=(-0.025, 0.025),
+        #         y_range=(-0.05, 0.05),
+        #         z_range=(-0.05, 0.05),
+        #     ),
+        # )
+
+        key_link_names = ("ankle_left", "ankle_right", "jaw_soft")
+
         task = RunInDirectionTask(
             device=engine.device,
+            imu_link_name="trunk_base",
             default_joint_positions=initial_joint_positions,
             height_range=(0.06, 0.2),
             target_height=0.11,
@@ -38,4 +74,6 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             task=task,
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
+            key_link_names=key_link_names,
+            # push_configuration=push_configuration,
         )

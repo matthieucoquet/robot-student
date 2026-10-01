@@ -20,8 +20,8 @@ if __name__ == "__main__":
     )
 
     learner = get_ppo_factory(
-        actor_observation_keys=("proprioception",),
-        critic_observation_keys=("proprioception",),
+        actor_observation_keys=("actor",),
+        critic_observation_keys=("critic",),
         compile_models=True,
     )
 

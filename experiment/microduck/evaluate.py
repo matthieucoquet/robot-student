@@ -12,8 +12,8 @@ if __name__ == "__main__":
         environment_count=1,
     )
     learner_configuration = get_ppo_factory(
-        actor_observation_keys=("proprioception",),
-        critic_observation_keys=("proprioception",),
+        actor_observation_keys=("actor",),
+        critic_observation_keys=("critic",),
     ).configuration
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
