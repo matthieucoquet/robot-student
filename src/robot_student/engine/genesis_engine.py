@@ -3,7 +3,7 @@ from pathlib import Path
 import genesis as gs
 import torch
 
-from robot_student.engine.control_mode import ControlMode
+from robot_student.engine.control_mode import BamControlMode, ControlMode
 from robot_student.engine.kinematic_robot import KinematicRobot
 from robot_student.engine.robot import DomainRandomizationConfiguration, Robot
 from robot_student.engine.robot_state import NoiseConfiguration
@@ -61,6 +61,8 @@ class GenesisEngine:
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
     ) -> Robot:
         morph = gs.morphs.MJCF(file=str(xml_path))
+        if isinstance(control_mode, BamControlMode):
+            self._scene.options.rigid.batch_dofs_info = True
         if domain_randomization_configuration is not None and domain_randomization_configuration.center_of_mass is not None:
             self._scene.options.rigid.batch_links_info = True
             morph.align = False
@@ -153,6 +155,8 @@ class GenesisEngine:
             robot.configure_domain_randomization(self.environment_count)
 
     def step(self) -> None:
+        for robot in self.robots:
+            robot.update_actuator()
         self._scene.step()
 
     def follow_robot(self, robot: KinematicRobot, smoothing: float | None = 0.05) -> None:
@@ -167,6 +171,8 @@ class GenesisEngine:
 
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
         self._scene.reset(envs_idx=environment_indices)
+        for robot in self.robots:
+            robot.reset_actuator(environment_indices)
 
     def reset_recording_camera(self, environment_indices: torch.Tensor | None = None) -> None:
         if self._recording_camera is None or self._recording_entity is None:

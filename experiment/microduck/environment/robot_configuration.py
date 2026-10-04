@@ -1,14 +1,17 @@
 from pathlib import Path
 
-from robot_student.engine.control_mode import PositionControlMode
+from robot_student.engine.control_mode import BamControlMode
 
 
 def microduck_configuration():
     mjcf_path = Path(__file__).parent / "mjcf" / "microduck" / "robot_walk.xml"
 
-    control_mode = PositionControlMode(
-        joints=None,
-        action_limit_scale=1.1,
+    control_mode = BamControlMode(
+        input_voltage=7.4,
+        input_voltage_drop_resistance=0.1,
+        minimum_input_voltage=6.0,
+        max_current=None,
+        action_limit_scale=1.4,
     )
 
     initial_joint_positions = (

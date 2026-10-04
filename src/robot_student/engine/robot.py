@@ -5,7 +5,8 @@ import torch
 from genesis.engine.entities import RigidEntity
 from genesis.utils.geom import inv_transform_by_quat, transform_quat_by_quat, xyz_to_quat
 
-from robot_student.engine.control_mode import ControlMode, PositionControlMode
+from robot_student.engine.bam import Bam
+from robot_student.engine.control_mode import BamControlMode, ControlMode, PositionControlMode
 from robot_student.engine.robot_state import NoiseConfiguration, RobotState
 
 from .kinematic_robot import KinematicRobot
@@ -48,6 +49,7 @@ class Robot(KinematicRobot):
                 self._observation_noise[field.name] = noise.half_width
                 self.noisy_observation_enabled = True
         self._control_mode = control_mode
+        self._bam: Bam | None = None
         self._setup_controlled_joints()
         self.n_controlled_dofs = len(self._controlled_dof_indices)
 
@@ -105,7 +107,7 @@ class Robot(KinematicRobot):
 
     def _setup_controlled_joints(self) -> None:
         match self._control_mode:
-            case PositionControlMode(joints=None):
+            case PositionControlMode(joints=None) | BamControlMode():
                 # If joints is set to None, the actuator used in the mjcf are used
                 self._controlled_joints = [
                     joint for joint in self._entity.joints if joint.n_dofs > 0 and (joint.desc.dofs_act_gain != 0).any()
@@ -129,6 +131,24 @@ class Robot(KinematicRobot):
 
     def configure_control_mode(self) -> None:
         match self._control_mode:
+            case BamControlMode() as configuration:
+                joint_positions = self._entity.get_dofs_position(self._controlled_dof_indices)
+                self._bam = Bam(
+                    entity=self._entity,
+                    controlled_dofs_indices=self._controlled_dof_indices,
+                    input_voltage=joint_positions.new_tensor(configuration.input_voltage),
+                    input_voltage_drop_resistance=configuration.input_voltage_drop_resistance,
+                    minimum_input_voltage=configuration.minimum_input_voltage,
+                    max_current=configuration.max_current,
+                )
+                parameters = self._bam.actuator_parameters
+                maximum_torque = parameters.kt * configuration.input_voltage * parameters.max_pwm / parameters.R
+                maximum_control_forces = joint_positions.new_full((self.n_controlled_dofs,), maximum_torque)
+                self._control_action_scale = joint_positions.new_full(
+                    (self.n_controlled_dofs,), 0.25 * parameters.max_pwm / (parameters.kp * parameters.error_gain)
+                )
+                self._inverse_maximum_control_forces = maximum_control_forces.reciprocal()
+                return
             case PositionControlMode(joints=None):
                 pass
             case PositionControlMode(joints=joint_settings):
@@ -185,7 +205,11 @@ class Robot(KinematicRobot):
         return self._default_joint_positions
 
     def get_joint_dof_limits(self) -> tuple[torch.Tensor, torch.Tensor]:
-        return self._entity.get_dofs_limit(self._controlled_dof_indices)
+        lower_bounds, upper_bounds = self._entity.get_dofs_limit(self._controlled_dof_indices)
+        if lower_bounds.ndim > 1:  # if batch_dofs_info=True, bound tensors are (n_envs, n_dofs)
+            lower_bounds = lower_bounds[0]
+            upper_bounds = upper_bounds[0]
+        return lower_bounds, upper_bounds
 
     def set_default_pose(self, default_pose: torch.Tensor) -> None:
         self._default_pose = default_pose.detach().clone()
@@ -205,7 +229,7 @@ class Robot(KinematicRobot):
         controlled_joint_indices = [index - self.n_root_dofs for index in self._controlled_dof_indices]
         self._control_position_offsets = joint_position_offsets[..., controlled_joint_indices]
 
-        lower_bounds, upper_bounds = self._entity.get_dofs_limit(self._controlled_dof_indices)
+        lower_bounds, upper_bounds = self.get_joint_dof_limits()
         self._control_lower_bounds, self._control_upper_bounds = scale_joint_position_limits(
             lower_bounds, upper_bounds, self._control_mode.action_limit_scale
         )
@@ -234,7 +258,19 @@ class Robot(KinematicRobot):
                 out=self._control_targets,
             )
 
-        self._entity.control_dofs_position(self._control_targets, self._controlled_dof_indices)
+        if isinstance(self._control_mode, PositionControlMode):
+            self._entity.control_dofs_position(self._control_targets, self._controlled_dof_indices)
+
+    @torch.no_grad()
+    def update_actuator(self) -> None:
+        """Update BAM torque and friction before each physics step."""
+        if self._bam is not None:
+            motor_torque = self._bam.step(self._control_targets)
+            self._entity.control_dofs_force(motor_torque, self._controlled_dof_indices)
+
+    def reset_actuator(self, environment_indices: torch.Tensor | None = None) -> None:
+        if self._bam is not None:
+            self._bam.reset(environment_indices)
 
 
 def scale_joint_position_limits(
