@@ -29,4 +29,6 @@ class Xl330ActuatorParameters:
     error_gain: float = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.max_current is not None and (not math.isfinite(self.max_current) or self.max_current < 0.0):
+            raise ValueError("max_current must be finite and non-negative")
         object.__setattr__(self, "error_gain", self.encoder_counts_per_rev / (2 * math.pi * self.kp_divisor * self.pwm_limit))

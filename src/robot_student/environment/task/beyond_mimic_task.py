@@ -4,6 +4,7 @@ import torch
 from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_quat, transform_quat_by_quat
 
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_observation import RobotObservation
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
@@ -86,14 +87,16 @@ class BeyondMimicTask(MotionTrackingTask):
         }
         return {key: TensorSchema(shape=(size,), data_type=torch.float32) for key, size in sizes.items()}
 
-    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+    def observation(
+        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         motion_command = torch.cat(
             (self._reference_state.joint_dof_positions, self._reference_state.joint_dof_velocities),
             dim=-1,
         )
 
-        for noisy_observation in [True, False]:
-            observed_state = noisy_state if noisy_observation else robot_state
+        for actor_observation in (True, False):
+            observed_state = robot_observation if actor_observation else robot_state
 
             anchor_position = observed_state.world_link_positions[..., self._anchor_link_index, :]
             anchor_rotation = observed_state.world_link_rotations[..., self._anchor_link_index, :]
@@ -110,7 +113,7 @@ class BeyondMimicTask(MotionTrackingTask):
             joint_positions = observed_state.joint_dof_positions - self._robot.default_joint_positions
             joint_velocities = observed_state.joint_dof_velocities
 
-            if noisy_observation:
+            if actor_observation:
                 actor = torch.cat(
                     (
                         motion_command,

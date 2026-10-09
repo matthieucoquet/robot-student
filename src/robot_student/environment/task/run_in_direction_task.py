@@ -2,13 +2,14 @@ import math
 from collections.abc import Sequence
 
 import torch
-from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_quat, transform_quat_by_quat
+from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
 
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_observation import RobotObservation
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.task import Task, TaskFeedback
-from robot_student.util.geometry import heading_angle, inverse_heading_rotation, quat_to_rot6d
+from robot_student.util.geometry import heading_angle, quat_to_rot6d
 
 
 class RunInDirectionTask(Task):
@@ -79,10 +80,12 @@ class RunInDirectionTask(Task):
     def reset(self, environment_indices: torch.Tensor) -> None:
         pass
 
-    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+    def observation(
+        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
 
-        for noisy_observation in [True, False]:
-            observed_state = noisy_state if noisy_observation else robot_state
+        for actor_observation in (True, False):
+            observed_state = robot_observation if actor_observation else robot_state
 
             imu_rotation = observed_state.world_link_rotations[..., self._imu_link_index, :]
             inverse_imu_rotation = inv_quat(imu_rotation)
@@ -93,7 +96,7 @@ class RunInDirectionTask(Task):
             joint_positions = observed_state.joint_dof_positions - self._robot.default_joint_positions
             joint_velocities = observed_state.joint_dof_velocities
 
-            if noisy_observation:
+            if actor_observation:
                 actor = torch.cat(
                     (imu_angular_velocity, projected_gravity, joint_positions, joint_velocities, previous_action),
                     dim=-1,

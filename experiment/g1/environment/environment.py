@@ -3,7 +3,7 @@ from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.engine.robot import CenterOfMassRandomization, DomainRandomizationConfiguration
-from robot_student.engine.robot_state import NoiseConfiguration, UniformNoise
+from robot_student.engine.robot_observation import NoiseConfiguration, UniformNoise
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.robot_environment import PushConfiguration

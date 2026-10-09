@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from robot_student.engine.genesis_engine import GenesisEngine
+from robot_student.engine.robot import CommandDelayConfiguration, ObservationDelayConfiguration
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.run.environment_factory import EnvironmentFactory
@@ -18,6 +19,16 @@ class PPOEnvironmentFactory(EnvironmentFactory):
         engine: GenesisEngine,
     ) -> Environment:
         mjcf_path, control_mode, initial_pose, initial_joint_positions = microduck_configuration()
+
+        command_delay_configuration = CommandDelayConfiguration(
+            delay_physics_steps_range=(3, 6),  # 15–30 ms at 200 Hz.
+        )
+        imu_link_name = "trunk_base"
+        observation_delay_configuration = ObservationDelayConfiguration(
+            joint_velocity_delay_control_steps=1,
+            imu_link_name=imu_link_name,
+            imu_delay_control_steps_range=(0, 1),
+        )
 
         # robot_state_noise = NoiseConfiguration(
         #     root_velocity=UniformNoise(half_width=0.5),
@@ -55,7 +66,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
 
         task = RunInDirectionTask(
             device=engine.device,
-            imu_link_name="trunk_base",
+            imu_link_name=imu_link_name,
             default_joint_positions=initial_joint_positions,
             height_range=(0.06, 0.2),
             target_height=0.11,
@@ -75,5 +86,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
             key_link_names=key_link_names,
+            command_delay_configuration=command_delay_configuration,
+            observation_delay_configuration=observation_delay_configuration,
             # push_configuration=push_configuration,
         )

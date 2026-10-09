@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import torch
 
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_observation import RobotObservation
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 
@@ -58,9 +59,12 @@ class Task(ABC):
         """Compute reward, termination, and metrics, using the inputs relevant to this task."""
 
     @abstractmethod
-    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+    def observation(
+        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         """Return observations matching get_schema.
 
-        noisy_state equals the clean state when noise is disabled. Both states are read-only.
+        robot_state is current physical truth; robot_observation contains possibly noisy, delayed measurements.
+        Both inputs are read-only; feature construction must not sample noise or advance sensor history.
         previous_action is a read-only buffer; clone it if returning it directly.
         """

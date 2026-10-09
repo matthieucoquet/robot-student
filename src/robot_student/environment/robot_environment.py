@@ -8,8 +8,9 @@ import torch
 from tensordict import TensorDict, TensorDictBase
 
 from robot_student.engine.control_mode import ControlMode
-from robot_student.engine.robot import DomainRandomizationConfiguration
-from robot_student.engine.robot_state import NoiseConfiguration, RobotState
+from robot_student.engine.robot import CommandDelayConfiguration, DomainRandomizationConfiguration, ObservationDelayConfiguration
+from robot_student.engine.robot_observation import NoiseConfiguration, RobotObservation
+from robot_student.engine.robot_state import RobotState
 from robot_student.environment.environment import Environment
 from robot_student.environment.schema import EnvironmentSchema, TensorSchema
 from robot_student.environment.task.task import Task
@@ -39,6 +40,8 @@ class RobotEnvironment(Environment):
         *,
         noise_configuration: NoiseConfiguration | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
+        command_delay_configuration: CommandDelayConfiguration | None = None,
+        observation_delay_configuration: ObservationDelayConfiguration | None = None,
         push_configuration: PushConfiguration | None = None,
     ) -> None:
         self._engine = engine
@@ -50,6 +53,8 @@ class RobotEnvironment(Environment):
             control_mode=control_mode,
             noise_configuration=noise_configuration,
             domain_randomization_configuration=domain_randomization_configuration,
+            command_delay_configuration=command_delay_configuration,
+            observation_delay_configuration=observation_delay_configuration,
         )
 
         device = engine.device
@@ -87,7 +92,7 @@ class RobotEnvironment(Environment):
         # Starts at the default pose
         self._previous_action = self._robot.default_control.expand(self.count, -1).clone()
         self._state: RobotState = self._robot.get_state()
-        self._noisy_state = self._robot.sample_noisy_observation(self._state)
+        self._robot_observation: RobotObservation = self._robot.reset_observation(self._state)
         self._push_configuration = push_configuration
         self._push_interval_steps = 0
         if push_configuration is not None:
@@ -120,7 +125,7 @@ class RobotEnvironment(Environment):
         self._engine.reset_recording_camera()
 
         self._state = self._robot.get_state()
-        self._noisy_state = self._robot.sample_noisy_observation(self._state)
+        self._robot_observation = self._robot.reset_observation(self._state)
         return self._get_observation()
 
     @torch.no_grad()
@@ -135,8 +140,8 @@ class RobotEnvironment(Environment):
             reset_state = self._robot.get_state(environment_indices=environment_indices)
             self._state.copy_environments_(environment_indices, reset_state)
 
-            noisy_reset_state = self._robot.sample_noisy_observation(reset_state)
-            self._noisy_state.copy_environments_(environment_indices, noisy_reset_state)
+            reset_observation = self._robot.reset_observation(reset_state, environment_indices=environment_indices)
+            self._robot_observation.copy_environments_(environment_indices, reset_observation)
 
             self._engine.reset_recording_camera(environment_indices)
             self._episode_step_count.masked_fill_(done, 0)
@@ -156,7 +161,7 @@ class RobotEnvironment(Environment):
             self._engine.step()
 
         self._state = self._robot.get_state()
-        self._noisy_state = self._robot.sample_noisy_observation(self._state)
+        self._robot_observation = self._robot.observe(self._state)
         self._episode_step_count.add_(1)
         task_feedback = self._task.compute_feedback(
             self._state,
@@ -206,7 +211,7 @@ class RobotEnvironment(Environment):
     def _get_observation(self) -> TensorDictBase:
         observation = self._task.observation(
             self._state,
-            noisy_state=self._noisy_state,
+            robot_observation=self._robot_observation,
             previous_action=self._previous_action,
         )
         first_tensor = next(iter(observation.values()))

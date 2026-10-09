@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
 
+from robot_student.engine.robot_observation import RobotObservation
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
@@ -51,7 +52,10 @@ class DeepMimicTask(MotionTrackingTask):
             ),
         }
 
-    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+    def observation(
+        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Build shared clean features; robot_observation is intentionally unused."""
         targets = self._reference_robot.get_target_states(self._simulation_steps_per_control_step, self._target_steps)
 
         key_link_positions = targets.world_link_positions.index_select(-2, self._key_link_indices)
