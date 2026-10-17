@@ -5,8 +5,7 @@ import torch
 
 from robot_student.engine.control_mode import BamControlMode, ControlMode
 from robot_student.engine.kinematic_robot import KinematicRobot
-from robot_student.engine.robot import CommandDelayConfiguration, DomainRandomizationConfiguration, ObservationDelayConfiguration, Robot
-from robot_student.engine.robot_observation import NoiseConfiguration
+from robot_student.engine.robot import CommandDelayConfiguration, DomainRandomizationConfiguration, Robot
 
 
 class _MjcfCompatibleKinematicOptions(gs.options.KinematicOptions):
@@ -57,10 +56,8 @@ class GenesisEngine:
         xml_path: Path,
         control_mode: ControlMode,
         *,
-        noise_configuration: NoiseConfiguration | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
         command_delay_configuration: CommandDelayConfiguration | None = None,
-        observation_delay_configuration: ObservationDelayConfiguration | None = None,
     ) -> Robot:
         morph = gs.morphs.MJCF(file=str(xml_path))
         if isinstance(control_mode, BamControlMode):
@@ -72,10 +69,8 @@ class GenesisEngine:
         robot = Robot(
             entity,
             control_mode=control_mode,
-            noise_configuration=noise_configuration,
             domain_randomization_configuration=domain_randomization_configuration,
             command_delay_configuration=command_delay_configuration,
-            observation_delay_configuration=observation_delay_configuration,
         )
         self.robots.append(robot)
 

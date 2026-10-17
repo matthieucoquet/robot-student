@@ -2,14 +2,12 @@ import os
 from pathlib import Path
 
 import mujoco
-from mjlab.actuator import XmlActuatorCfg
+from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
+from mjlab.utils.spec_config import CollisionCfg
 from mjlab_microduck.actuator import (
     BacklashEncoderBamActuatorCfg,
     FrictionDRBamActuatorCfg,
 )
-from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
-from mjlab.utils.spec_config import CollisionCfg
-
 
 _ROBOT_DIR: Path = Path(os.path.dirname(__file__)) / "microduck"
 
@@ -148,9 +146,9 @@ FULL_COLLISION = CollisionCfg(
 
 # -- Old actuator (XML position, MuJoCo built-in PD + friction) --
 # actuators = DelayedActuatorCfg(
-    # delay_min_lag=0,
-    # delay_max_lag=3,
-    # base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r".*",)),
+# delay_min_lag=0,
+# delay_max_lag=3,
+# base_cfg=XmlPositionActuatorCfg(joint_names_expr=(r".*",)),
 # )
 
 # -- BAM M6 actuator (full voltage control + load-dependent friction) --
@@ -183,9 +181,9 @@ backlash_actuators = BacklashEncoderBamActuatorCfg(**_BAM_ACTUATOR_KWARGS)
 
 # -- BAM M4 actuator
 # actuators = DelayedActuatorCfg(
-    # delay_min_lag=0,
-    # delay_max_lag=3,
-    # base_cfg=make_bam_m4_actuator_cfg(),
+# delay_min_lag=0,
+# delay_max_lag=3,
+# base_cfg=make_bam_m4_actuator_cfg(),
 # )
 
 # HOME frame for the backlash model. HOME_FRAME's unanchored patterns

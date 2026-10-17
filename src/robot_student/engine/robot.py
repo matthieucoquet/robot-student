@@ -1,14 +1,12 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 import genesis as gs
 import torch
 from genesis.engine.entities import RigidEntity
-from genesis.utils.geom import inv_transform_by_quat, transform_quat_by_quat, xyz_to_quat
+from genesis.utils.geom import inv_transform_by_quat
 
 from robot_student.engine.bam import Bam
 from robot_student.engine.control_mode import BamControlMode, ControlMode, PositionControlMode
-from robot_student.engine.robot_observation import NoiseConfiguration, RobotObservation
-from robot_student.engine.robot_state import RobotState
 from robot_student.util.delay_buffer import DelayBuffer
 
 from .kinematic_robot import KinematicRobot
@@ -34,40 +32,18 @@ class CommandDelayConfiguration:
     delay_physics_steps_range: tuple[int, int] = (0, 0)
 
 
-@dataclass(frozen=True, kw_only=True, slots=True)
-class ObservationDelayConfiguration:
-    """Control-rate sensor latency, sampled once per environment and fixed across resets."""
-
-    joint_velocity_delay_control_steps: int = 0
-    imu_link_name: str | None = None
-    imu_delay_control_steps_range: tuple[int, int] = (0, 0)
-
-
 class Robot(KinematicRobot):
     def __init__(
         self,
         entity: RigidEntity,
         control_mode: ControlMode,
         *,
-        noise_configuration: NoiseConfiguration | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
         command_delay_configuration: CommandDelayConfiguration | None = None,
-        observation_delay_configuration: ObservationDelayConfiguration | None = None,
     ) -> None:
         super().__init__(entity)
         self._domain_randomization_configuration = domain_randomization_configuration
         self._command_delay_configuration = command_delay_configuration
-        self._observation_delay_configuration = observation_delay_configuration
-        self._noise_configuration = noise_configuration
-        self._observation_noise: dict[str, float] = {}
-        self.noisy_observation_enabled = False
-        if noise_configuration is not None:
-            for field in fields(noise_configuration):
-                noise = getattr(noise_configuration, field.name)
-                if noise is None or noise.half_width <= 0:
-                    continue
-                self._observation_noise[field.name] = noise.half_width
-                self.noisy_observation_enabled = True
         self._control_mode = control_mode
         self._bam: Bam | None = None
         self._setup_controlled_joints()
@@ -107,32 +83,8 @@ class Robot(KinematicRobot):
             self._command_delay_buffer = DelayBuffer(
                 delay_range=self._command_delay_configuration.delay_physics_steps_range,
                 environment_count=environment_count,
-                size=self.n_controlled_dofs,
+                measurement_shape=(self.n_controlled_dofs,),
             )
-
-        self._joint_velocity_delay_buffer = None
-        self._imu_delay_buffer = None
-        self._imu_link_index = None
-        self._observation_initialized = False
-        configuration = self._observation_delay_configuration
-        if configuration is not None:
-            joint_velocity_delay_steps = configuration.joint_velocity_delay_control_steps
-            if joint_velocity_delay_steps != 0:
-                self._joint_velocity_delay_buffer = DelayBuffer(
-                    delay_range=(joint_velocity_delay_steps, joint_velocity_delay_steps),
-                    environment_count=environment_count,
-                    size=self.n_joint_dofs,
-                )
-            if configuration.imu_delay_control_steps_range != (0, 0):
-                if configuration.imu_link_name is None:
-                    raise ValueError("imu_link_name is required when IMU delay is enabled")
-                self._imu_link_index = self.get_link_indices((configuration.imu_link_name,))[0]
-                self._imu_delay_buffer = DelayBuffer(
-                    delay_range=configuration.imu_delay_control_steps_range,
-                    environment_count=environment_count,
-                    size=7,  # Link quaternion and world angular velocity.
-                )
-                self._imu_readings = torch.empty((environment_count, 7), dtype=gs.tc_float, device=gs.device)
 
     @torch.no_grad()
     def add_root_velocity(self, linear_velocity_offset: torch.Tensor, angular_velocity_offset: torch.Tensor) -> None:
@@ -145,78 +97,6 @@ class Robot(KinematicRobot):
         root_velocities[..., :3].add_(linear_velocity_offset)
         root_velocities[..., 3:].add_(inv_transform_by_quat(angular_velocity_offset, root_rotation))
         self._entity.set_dofs_velocity(root_velocities, dofs_idx_local=root_dof_indices)
-
-    @torch.no_grad()
-    def sample_noisy_observation(self, state: RobotState) -> RobotObservation:
-        """Sample present measurements without reading or advancing delay history.
-
-        Unchanged fields share clean storage and must be treated as read-only.
-        """
-        observation = RobotObservation(
-            **{name: value.detach() if value.requires_grad else value for name, value in state.items()},
-            batch_size=state.batch_size,
-        )
-        if self.noisy_observation_enabled:
-            for field_name, half_width in self._observation_noise.items():
-                value = getattr(state, field_name)
-                if field_name in ("root_rotation", "world_link_rotations"):
-                    angles = value.new_empty((*value.shape[:-1], 3)).uniform_(-half_width, half_width)
-                    noise_rotation = xyz_to_quat(angles, rpy=True)
-                    noisy_value = transform_quat_by_quat(noise_rotation, value)
-                else:
-                    noise = torch.empty_like(value).uniform_(-half_width, half_width)
-                    noisy_value = noise.add_(value)
-                setattr(observation, field_name, noisy_value)
-        return observation
-
-    @torch.no_grad()
-    def observe(self, state: RobotState) -> RobotObservation:
-        """Capture one sample for all environments, advancing history by one control step.
-
-        Noise is sampled at capture time, before delaying the measurement packet.
-        Seed histories with reset_observation before the first delayed observation.
-        """
-        if not self._observation_initialized and (self._joint_velocity_delay_buffer is not None or self._imu_delay_buffer is not None):
-            raise RuntimeError("Call reset_observation with the initial state before observing delayed measurements")
-        observation = self.sample_noisy_observation(state)
-
-        if self._joint_velocity_delay_buffer is not None:
-            self._joint_velocity_delay_buffer.update(observation.joint_dof_velocities)
-            observation.joint_dof_velocities = self._joint_velocity_delay_buffer.get_delayed()
-
-        if self._imu_delay_buffer is not None:
-            self._imu_readings[:, :4] = observation.world_link_rotations[:, self._imu_link_index]
-            self._imu_readings[:, 4:] = observation.world_link_angular_velocities[:, self._imu_link_index]
-            self._imu_delay_buffer.update(self._imu_readings)
-            delayed_imu = self._imu_delay_buffer.get_delayed()
-            observation.world_link_rotations = observation.world_link_rotations.clone()
-            observation.world_link_angular_velocities = observation.world_link_angular_velocities.clone()
-            observation.world_link_rotations[:, self._imu_link_index] = delayed_imu[:, :4]
-            observation.world_link_angular_velocities[:, self._imu_link_index] = delayed_imu[:, 4:]
-        return observation
-
-    @torch.no_grad()
-    def reset_observation(self, state: RobotState, *, environment_indices: torch.Tensor | None = None) -> RobotObservation:
-        """Seed selected histories after the final reset pose is installed, without advancing time.
-
-        State contains only selected rows when environment_indices is provided. Every history
-        slot receives the same initial noisy measurement, so no previous episode can leak through.
-        """
-        observation = self.sample_noisy_observation(state)
-        if self._joint_velocity_delay_buffer is not None:
-            self._joint_velocity_delay_buffer.reset(observation.joint_dof_velocities, environment_indices)
-        if self._imu_delay_buffer is not None:
-            imu_readings = torch.cat(
-                (
-                    observation.world_link_rotations[:, self._imu_link_index],
-                    observation.world_link_angular_velocities[:, self._imu_link_index],
-                ),
-                dim=-1,
-            )
-            self._imu_delay_buffer.reset(imu_readings, environment_indices)
-        if environment_indices is None:
-            self._observation_initialized = True
-        return observation
 
     def _setup_controlled_joints(self) -> None:
         match self._control_mode:
@@ -390,7 +270,7 @@ class Robot(KinematicRobot):
 
     @torch.no_grad()
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
-        """Reset actuator and command history; seed sensors after task pose changes."""
+        """Reset actuator and command history for selected environments."""
         if self._command_delay_buffer is not None:
             self._command_delay_buffer.reset(self._default_control_positions, environment_indices)
         if self._bam is not None:

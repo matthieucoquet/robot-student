@@ -3,21 +3,36 @@ from collections.abc import Sequence
 
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
+from tensordict import TensorClass
 
 from robot_student.engine.robot import Robot
-from robot_student.engine.robot_observation import RobotObservation
-from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
-from robot_student.environment.task.task import Task, TaskFeedback
+from robot_student.environment.sensors import IMUSensor, Sensor
+from robot_student.environment.task.task import Task, TaskEvaluation
 from robot_student.util.geometry import heading_angle, quat_to_rot6d
+
+
+class SimulatorObservation(TensorClass["autocast"]):
+    root_position: torch.Tensor
+    root_rotation: torch.Tensor
+    root_velocity: torch.Tensor
+    joint_dof_positions: torch.Tensor
+    joint_dof_velocities: torch.Tensor
+    imu_position: torch.Tensor
+    imu_rotation: torch.Tensor
+    imu_angular_velocity: torch.Tensor
+    world_link_positions: torch.Tensor
+    world_link_rotations: torch.Tensor
 
 
 class RunInDirectionTask(Task):
     def __init__(
         self,
-        device: torch.device,
+        *,
         imu_link_name: str,
         default_joint_positions: Sequence[float],
+        device: torch.device,
+        key_link_names: Sequence[str] = (),
         direction: tuple[float, float] = (1.0, 0.0),
         target_speed: float = 1.0,
         target_speed_weight: float = 1.0,
@@ -27,12 +42,18 @@ class RunInDirectionTask(Task):
         control_cost_weight: float = 0.5,
         pose_cost_weight: float = 0.1,
         height_range: tuple[float, float] = (0.2, 1.0),
+        joint_dof_velocities_sensor: Sensor | None = None,
+        imu_sensor: IMUSensor | None = None,
     ) -> None:
         direction_norm = math.hypot(*direction)
         if not math.isclose(direction_norm, 1.0, rel_tol=1e-6, abs_tol=1e-6):
             raise ValueError(f"direction must be normalized, got norm {direction_norm}")
 
+        self._joint_dof_velocities_sensor = joint_dof_velocities_sensor or Sensor()
+        self._imu_sensor = imu_sensor or IMUSensor()
+        self._sensors_enabled = not (self._joint_dof_velocities_sensor.is_passthrough and self._imu_sensor.is_passthrough)
         self._imu_link_name = imu_link_name
+        self._key_link_names = key_link_names
         self._world_gravity = torch.tensor((0.0, 0.0, -1.0), device=device, dtype=torch.float32)
         self._direction = torch.tensor(direction, device=device, dtype=torch.float32)
         self._direction_heading = math.atan2(direction[1], direction[0])
@@ -67,92 +88,128 @@ class RunInDirectionTask(Task):
         self,
         *,
         robot: Robot,
-        key_link_indices: torch.Tensor,
         simulation_steps_per_control_step: int,
-        global_observation: bool,
     ) -> None:
         self._robot = robot
-        self._key_link_indices = key_link_indices
-        self._global_observation = global_observation
+        key_link_indices = robot.get_link_indices(self._key_link_names)
+        self._imu_link_index = robot.get_link_indices((self._imu_link_name,))[0]
+        self._capture_link_indices = tuple(dict.fromkeys((*key_link_indices, self._imu_link_index)))
+        self._imu_capture_link_index = self._capture_link_indices.index(self._imu_link_index)
+        self._key_link_indices = torch.tensor(
+            [self._capture_link_indices.index(index) for index in key_link_indices],
+            dtype=torch.int64,
+            device=robot.default_control.device,
+        )
+        self._simulator_observation = self._read_simulator_observation()
+        self._joint_dof_velocities_sensor.initialize(self._simulator_observation.joint_dof_velocities)
+        self._imu_sensor.initialize(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
-        self._imu_link_index = self._robot.get_link_indices([self._imu_link_name])[0]
+    @torch.no_grad()
+    def reset(self, environment_indices: torch.Tensor | None = None) -> None:
+        simulator_observation = self._read_simulator_observation(environment_indices)
+        if environment_indices is None:
+            self._simulator_observation = simulator_observation
+        else:
+            self._simulator_observation[environment_indices] = simulator_observation
+        if not self._joint_dof_velocities_sensor.is_passthrough:
+            self._joint_dof_velocities_sensor.reset(self._simulator_observation.joint_dof_velocities, environment_indices)
+        if not self._imu_sensor.is_passthrough:
+            self._imu_sensor.reset(
+                self._simulator_observation.imu_rotation,
+                self._simulator_observation.imu_angular_velocity,
+                environment_indices,
+            )
 
-    def reset(self, environment_indices: torch.Tensor) -> None:
-        pass
+    def step(self, is_control_step: bool) -> None:
+        if is_control_step:
+            # Get forces just before the physics step are executed
+            self._normalized_control_forces = self._robot.get_normalized_control_forces()
 
-    def observation(
-        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
-    ) -> dict[str, torch.Tensor]:
+    @torch.no_grad()
+    def measure_state(self) -> None:
+        """Capture the full batch and advance sensor histories once after a control interval."""
+        self._simulator_observation = self._read_simulator_observation()
+        self._joint_dof_velocities_sensor.update(self._simulator_observation.joint_dof_velocities)
+        self._imu_sensor.update(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
-        for actor_observation in (True, False):
-            observed_state = robot_observation if actor_observation else robot_state
+    @torch.no_grad()
+    def _read_simulator_observation(self, environment_indices: torch.Tensor | None = None) -> SimulatorObservation:
+        positions = self._robot.get_generalized_positions(environment_indices)
+        velocities = self._robot.get_generalized_velocities(environment_indices)
+        link_positions = self._robot.get_links_position(environment_indices, link_indices=self._capture_link_indices)
+        link_rotations = self._robot.get_links_rotation(environment_indices, link_indices=self._capture_link_indices)
 
-            imu_rotation = observed_state.world_link_rotations[..., self._imu_link_index, :]
-            inverse_imu_rotation = inv_quat(imu_rotation)
-            imu_angular_velocity = observed_state.world_link_angular_velocities[..., self._imu_link_index, :]
-            imu_angular_velocity = transform_by_quat(imu_angular_velocity, inverse_imu_rotation)
-            projected_gravity = transform_by_quat(self._world_gravity, inverse_imu_rotation)
+        return SimulatorObservation(
+            root_position=positions[..., :3],
+            root_rotation=positions[..., 3 : self._robot.n_root_qs],
+            root_velocity=velocities[..., :3],
+            joint_dof_positions=positions[..., self._robot.n_root_qs :],
+            joint_dof_velocities=velocities[..., self._robot.n_root_dofs :],
+            imu_position=link_positions[..., self._imu_capture_link_index, :],
+            imu_rotation=link_rotations[..., self._imu_capture_link_index, :],
+            imu_angular_velocity=self._robot.get_links_angular_velocity(environment_indices, link_indices=(self._imu_link_index,))[
+                ..., 0, :
+            ],
+            world_link_positions=link_positions,
+            world_link_rotations=link_rotations,
+            batch_size=positions.shape[0],
+        )
 
-            joint_positions = observed_state.joint_dof_positions - self._robot.default_joint_positions
-            joint_velocities = observed_state.joint_dof_velocities
-
-            if actor_observation:
-                actor = torch.cat(
-                    (imu_angular_velocity, projected_gravity, joint_positions, joint_velocities, previous_action),
-                    dim=-1,
-                )
-            else:
-                # For now the additional variable are different than microduck rl
-                world_link_positions = robot_state.world_link_positions.index_select(-2, self._key_link_indices)
-                world_link_rotations = robot_state.world_link_rotations.index_select(-2, self._key_link_indices)
-                imu_link_position = observed_state.world_link_positions[..., self._imu_link_index, :]
-                link_positions = transform_by_quat(
-                    world_link_positions - imu_link_position.unsqueeze(-2), inverse_imu_rotation.unsqueeze(-2)
-                ).flatten(start_dim=-2)
-                link_rotations = quat_to_rot6d(transform_quat_by_quat(world_link_rotations, inverse_imu_rotation.unsqueeze(-2))).flatten(
-                    start_dim=-2
-                )
-                critic = torch.cat(
-                    (
-                        imu_angular_velocity,
-                        projected_gravity,
-                        joint_positions,
-                        joint_velocities,
-                        previous_action,
-                        link_positions,
-                        link_rotations,
-                    ),
-                    dim=-1,
-                )
+    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        simulator_observation = self._simulator_observation
+        critic_inverse_imu_rotation = inv_quat(simulator_observation.imu_rotation)
+        imu_angular_velocity = transform_by_quat(simulator_observation.imu_angular_velocity, critic_inverse_imu_rotation)
+        projected_gravity = transform_by_quat(self._world_gravity, critic_inverse_imu_rotation)
+        joint_dof_positions = simulator_observation.joint_dof_positions - self._robot.default_joint_positions
+        joint_dof_velocities = simulator_observation.joint_dof_velocities
+        critic_components = (imu_angular_velocity, projected_gravity, joint_dof_positions, joint_dof_velocities, previous_action)
+        actor_components = critic_components
+        if self._sensors_enabled:
+            if not self._imu_sensor.is_passthrough:
+                actor_inverse_imu_rotation = inv_quat(self._imu_sensor.rotation)
+                imu_angular_velocity = transform_by_quat(self._imu_sensor.angular_velocity, actor_inverse_imu_rotation)
+                projected_gravity = transform_by_quat(self._world_gravity, actor_inverse_imu_rotation)
+            if not self._joint_dof_velocities_sensor.is_passthrough:
+                joint_dof_velocities = self._joint_dof_velocities_sensor.observation
+            actor_components = (imu_angular_velocity, projected_gravity, joint_dof_positions, joint_dof_velocities, previous_action)
+        if self._key_link_indices.numel():
+            world_link_positions = simulator_observation.world_link_positions.index_select(-2, self._key_link_indices)
+            world_link_rotations = simulator_observation.world_link_rotations.index_select(-2, self._key_link_indices)
+            link_positions = transform_by_quat(
+                world_link_positions - simulator_observation.imu_position.unsqueeze(-2), critic_inverse_imu_rotation.unsqueeze(-2)
+            ).flatten(start_dim=-2)
+            link_rotations = quat_to_rot6d(transform_quat_by_quat(world_link_rotations, critic_inverse_imu_rotation.unsqueeze(-2))).flatten(
+                start_dim=-2
+            )
+            critic_components = (*critic_components, link_positions, link_rotations)
         return {
-            "actor": actor,
-            "critic": critic,
+            "actor": torch.cat(actor_components, dim=-1),
+            "critic": torch.cat(critic_components, dim=-1),
         }
 
-    def compute_feedback(
+    def evaluate_step(
         self,
-        state: RobotState,
         *,
-        normalized_control_forces: torch.Tensor,
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
-    ) -> TaskFeedback:
-        root_height = state.root_position[..., 2]
+    ) -> TaskEvaluation:
+        simulator_observation = self._simulator_observation
+        root_height = simulator_observation.root_position[..., 2]
         root_height_is_healthy = root_height >= self._minimum_healthy_height
         root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
         terminal = ~root_height_is_healthy
 
-        planar_velocity = state.root_velocity[..., :2]
+        planar_velocity = simulator_observation.root_velocity[..., :2]
         target_velocity_error = torch.linalg.vector_norm(planar_velocity - self._target_velocity, dim=-1)
         target_velocity_reward = target_velocity_error.mul(10.0).neg_().exp_()
 
         target_height_error = root_height - self._target_height
         target_height_reward = target_height_error.clamp(max=0.0).abs_().mul_(25.0).neg_().exp_()
 
-        facing_direction_reward = torch.cos(heading_angle(state.root_rotation) - self._direction_heading)
+        facing_direction_reward = torch.cos(heading_angle(simulator_observation.root_rotation) - self._direction_heading)
 
-        control_cost = torch.mean(normalized_control_forces.square(), dim=-1)
-        pose_cost = torch.mean((state.joint_dof_positions - self._default_joint_positions).square(), dim=-1)
+        control_cost = torch.mean(self._normalized_control_forces.square(), dim=-1)
+        pose_cost = torch.mean((simulator_observation.joint_dof_positions - self._default_joint_positions).square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.05
         reward = (
             stay_alive_reward
@@ -163,7 +220,7 @@ class RunInDirectionTask(Task):
             - self._pose_cost_weight * pose_cost
         )
 
-        return TaskFeedback(
+        return TaskEvaluation(
             reward=reward,
             terminal=terminal,
             transition_metrics={
