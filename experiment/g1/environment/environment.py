@@ -3,11 +3,11 @@ from pathlib import Path
 
 from robot_student.engine.genesis_engine import GenesisEngine
 from robot_student.engine.robot import CenterOfMassRandomization, DomainRandomizationConfiguration
-from robot_student.engine.robot_observation import NoiseConfiguration, UniformNoise
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.robot_environment import PushConfiguration
-from robot_student.environment.task.beyond_mimic_task import BeyondMimicTask
+from robot_student.environment.sensors import SensorConfiguration
+from robot_student.environment.task.beyond_mimic_task import BeyondMimicSensorConfiguration, BeyondMimicTask
 from robot_student.environment.task.deep_mimic_task import DeepMimicTask
 from robot_student.environment.task.motion_tracking_task import ResetPerturbationConfiguration
 from robot_student.motion import MotionLibrary, ReferenceSampling
@@ -119,6 +119,7 @@ class DeepMimicEnvironmentFactory(EnvironmentFactory):
             motion_library=motion_library,
             target_steps=[1, 2, 3],
             joint_reward_weight=joint_reward_weight,
+            key_link_names=key_link_names,
             show_reference_motion=self.show_reference_motion,
             reference_motion_offset=self.reference_motion_offset,
             reset_perturbation_configuration=self.reset_perturbation_configuration,
@@ -131,7 +132,6 @@ class DeepMimicEnvironmentFactory(EnvironmentFactory):
             task=task,
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
-            key_link_names=key_link_names,
         )
 
 
@@ -177,13 +177,13 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             "right_wrist_yaw_link",
         )
 
-        robot_state_noise = NoiseConfiguration(
-            root_velocity=UniformNoise(half_width=0.5),
-            root_angular_velocity=UniformNoise(half_width=0.2),
-            joint_dof_positions=UniformNoise(half_width=0.01),
-            joint_dof_velocities=UniformNoise(half_width=0.5),
-            world_link_positions=UniformNoise(half_width=0.25),
-            world_link_rotations=UniformNoise(half_width=0.05),
+        sensor_configuration = BeyondMimicSensorConfiguration(
+            root_velocity=SensorConfiguration(noise_half_width=0.5),
+            root_angular_velocity=SensorConfiguration(noise_half_width=0.2),
+            joint_dof_positions=SensorConfiguration(noise_half_width=0.01),
+            joint_dof_velocities=SensorConfiguration(noise_half_width=0.5),
+            anchor_position=SensorConfiguration(noise_half_width=0.25),
+            anchor_rotation=SensorConfiguration(noise_half_width=0.05),
         )
 
         reset_perturbation_configuration = ResetPerturbationConfiguration(
@@ -216,6 +216,8 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             reference_motion_offset=self.reference_motion_offset,
             reset_perturbation_configuration=reset_perturbation_configuration if self.enable_randomization else None,
             anchor_link_name=anchor_link_name,
+            key_link_names=key_link_names,
+            sensor_configuration=sensor_configuration if self.enable_randomization else None,
         )
 
         return RobotEnvironment(
@@ -225,8 +227,6 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             task=task,
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
-            key_link_names=key_link_names,
-            noise_configuration=robot_state_noise if self.enable_randomization else None,
             domain_randomization_configuration=domain_randomization_configuration if self.enable_randomization else None,
             push_configuration=push_configuration if self.enable_randomization else None,
         )

@@ -106,7 +106,7 @@ class RobotEnvironment(Environment):
         self._previous_action.copy_(self._robot.default_control)
 
         self._engine.reset()
-        self._task.reset()
+        self._task.reset(environment_indices=torch.arange(self._engine.environment_count, device=self.device, dtype=torch.int64))
         self._engine.reset_recording_camera()
         return self._get_observation()
 

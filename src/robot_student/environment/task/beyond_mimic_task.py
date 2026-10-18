@@ -1,20 +1,53 @@
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
 from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_quat, transform_quat_by_quat
 
 from robot_student.engine.robot import Robot
-from robot_student.engine.robot_observation import RobotObservation
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
+from robot_student.environment.sensors import RotationSensor, Sensor, SensorConfiguration
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
-from robot_student.environment.task.task import TaskFeedback
+from robot_student.environment.task.task import TaskEvaluation
 from robot_student.motion import MotionLibrary
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class BeyondMimicSensors:
+    root_velocity: Sensor
+    root_angular_velocity: Sensor
+    joint_dof_positions: Sensor
+    joint_dof_velocities: Sensor
+    anchor_position: Sensor
+    anchor_rotation: RotationSensor
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class BeyondMimicSensorConfiguration:
+    root_velocity: SensorConfiguration = field(default_factory=SensorConfiguration)
+    root_angular_velocity: SensorConfiguration = field(default_factory=SensorConfiguration)
+    joint_dof_positions: SensorConfiguration = field(default_factory=SensorConfiguration)
+    joint_dof_velocities: SensorConfiguration = field(default_factory=SensorConfiguration)
+    anchor_position: SensorConfiguration = field(default_factory=SensorConfiguration)
+    anchor_rotation: SensorConfiguration = field(default_factory=SensorConfiguration)
+
+    def create_sensors(self) -> BeyondMimicSensors:
+        """Create a fresh set of sensors for each task using this configuration."""
+        return BeyondMimicSensors(
+            root_velocity=self.root_velocity.create_sensor(Sensor),
+            root_angular_velocity=self.root_angular_velocity.create_sensor(Sensor),
+            joint_dof_positions=self.joint_dof_positions.create_sensor(Sensor),
+            joint_dof_velocities=self.joint_dof_velocities.create_sensor(Sensor),
+            anchor_position=self.anchor_position.create_sensor(Sensor),
+            anchor_rotation=self.anchor_rotation.create_sensor(RotationSensor),
+        )
+
+
 # Differences from upstream BeyondMimic: motion completion ends the episode;
-# observation noise perturbs robot state before feature construction, rather than observation terms directly.
+# observation noise perturbs measurements before feature construction, rather than observation terms directly.
 class BeyondMimicTask(MotionTrackingTask):
     def __init__(
         self,
@@ -24,6 +57,7 @@ class BeyondMimicTask(MotionTrackingTask):
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
         anchor_link_name: str = "pelvis",
         soft_joint_position_limit_factor: float = 0.9,
+        key_link_names: Sequence[str] = (),
         end_effector_link_names: tuple[str, ...] = (
             "left_ankle_roll_link",
             "right_ankle_roll_link",
@@ -32,10 +66,12 @@ class BeyondMimicTask(MotionTrackingTask):
         ),
         contact_force_threshold: float = 1.0,
         reset_perturbation_configuration: ResetPerturbationConfiguration | None = None,
+        sensor_configuration: BeyondMimicSensorConfiguration | None = None,
     ) -> None:
         super().__init__(
             xml_path=xml_path,
             motion_library=motion_library,
+            key_link_names=key_link_names,
             show_reference_motion=show_reference_motion,
             reference_motion_offset=reference_motion_offset,
             reset_perturbation_configuration=reset_perturbation_configuration,
@@ -44,29 +80,51 @@ class BeyondMimicTask(MotionTrackingTask):
         self._anchor_link_name = anchor_link_name
         self._end_effector_link_names = end_effector_link_names
         self._contact_force_threshold = contact_force_threshold
+        self._sensors = (sensor_configuration or BeyondMimicSensorConfiguration()).create_sensors()
 
     def initialize(
         self,
         *,
         robot: Robot,
-        key_link_indices: torch.Tensor,
         simulation_steps_per_control_step: int,
-        global_observation: bool,
     ) -> None:
         super().initialize(
             robot=robot,
-            key_link_indices=key_link_indices,
             simulation_steps_per_control_step=simulation_steps_per_control_step,
-            global_observation=global_observation,
         )
         self._anchor_link_index = self._robot.get_link_indices([self._anchor_link_name])[0]
         end_effector_link_indices = self._robot.get_link_indices(self._end_effector_link_names)
-        self._end_effector_link_indices = torch.tensor(end_effector_link_indices, dtype=torch.int64, device=key_link_indices.device)
+        self._end_effector_link_indices = torch.tensor(end_effector_link_indices, dtype=torch.int64, device=self._key_link_indices.device)
         self._penalized_contact_link_indices = torch.tensor(
             [index for index in range(self._robot.n_links) if index not in end_effector_link_indices],
             dtype=torch.int64,
-            device=key_link_indices.device,
+            device=self._key_link_indices.device,
         )
+        for sensor, value in self._sensor_values():
+            sensor.initialize(value)
+
+    def _sensor_values(self) -> tuple[tuple[Sensor, torch.Tensor], ...]:
+        state = self._state
+        return (
+            (self._sensors.root_velocity, state.root_velocity),
+            (self._sensors.root_angular_velocity, state.root_angular_velocity),
+            (self._sensors.joint_dof_positions, state.joint_dof_positions),
+            (self._sensors.joint_dof_velocities, state.joint_dof_velocities),
+            (self._sensors.anchor_position, state.world_link_positions[..., self._anchor_link_index, :]),
+            (self._sensors.anchor_rotation, state.world_link_rotations[..., self._anchor_link_index, :]),
+        )
+
+    @torch.no_grad()
+    def reset(self, environment_indices: torch.Tensor) -> None:
+        super().reset(environment_indices)
+        for sensor, value in self._sensor_values():
+            sensor.reset(value, environment_indices)
+
+    @torch.no_grad()
+    def measure_state(self) -> None:
+        super().measure_state()
+        for sensor, value in self._sensor_values():
+            sensor.update(value)
 
     def get_schema(self) -> dict[str, TensorSchema]:
         joint_count = self._robot.n_joint_dofs
@@ -87,49 +145,35 @@ class BeyondMimicTask(MotionTrackingTask):
         }
         return {key: TensorSchema(shape=(size,), data_type=torch.float32) for key, size in sizes.items()}
 
-    def observation(
-        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
-    ) -> dict[str, torch.Tensor]:
+    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        state = self._state
         motion_command = torch.cat(
             (self._reference_state.joint_dof_positions, self._reference_state.joint_dof_velocities),
             dim=-1,
         )
 
-        for actor_observation in (True, False):
-            observed_state = robot_observation if actor_observation else robot_state
+        actor_components = self._observation_components(
+            anchor_position=self._sensors.anchor_position.observation,
+            inverse_anchor_rotation=inv_quat(self._sensors.anchor_rotation.observation),
+            root_velocity=self._sensors.root_velocity.observation,
+            root_angular_velocity=self._sensors.root_angular_velocity.observation,
+            joint_dof_positions=self._sensors.joint_dof_positions.observation,
+            joint_dof_velocities=self._sensors.joint_dof_velocities.observation,
+        )
 
-            anchor_position = observed_state.world_link_positions[..., self._anchor_link_index, :]
-            anchor_rotation = observed_state.world_link_rotations[..., self._anchor_link_index, :]
-            inverse_anchor_rotation = inv_quat(anchor_rotation)
-            reference_anchor_position = self._reference_state.world_link_positions[..., self._anchor_link_index, :]
-            reference_anchor_rotation = self._reference_state.world_link_rotations[..., self._anchor_link_index, :]
+        anchor_position = state.world_link_positions[..., self._anchor_link_index, :]
+        inverse_anchor_rotation = inv_quat(state.world_link_rotations[..., self._anchor_link_index, :])
+        critic_components = self._observation_components(
+            anchor_position=anchor_position,
+            inverse_anchor_rotation=inverse_anchor_rotation,
+            root_velocity=state.root_velocity,
+            root_angular_velocity=state.root_angular_velocity,
+            joint_dof_positions=state.joint_dof_positions,
+            joint_dof_velocities=state.joint_dof_velocities,
+        )
 
-            anchor_position_error = transform_by_quat(reference_anchor_position - anchor_position, inverse_anchor_rotation)
-            anchor_rotation_error = quat_to_rot6d(transform_quat_by_quat(reference_anchor_rotation, inverse_anchor_rotation))
-
-            root_linear_velocities = inv_transform_by_quat(observed_state.root_velocity, observed_state.root_rotation)
-            root_angular_velocities = inv_transform_by_quat(observed_state.root_angular_velocity, observed_state.root_rotation)
-
-            joint_positions = observed_state.joint_dof_positions - self._robot.default_joint_positions
-            joint_velocities = observed_state.joint_dof_velocities
-
-            if actor_observation:
-                actor = torch.cat(
-                    (
-                        motion_command,
-                        anchor_position_error,
-                        anchor_rotation_error,
-                        root_linear_velocities,
-                        root_angular_velocities,
-                        joint_positions,
-                        joint_velocities,
-                        previous_action,
-                    ),
-                    dim=-1,
-                )
-
-        world_link_positions = robot_state.world_link_positions.index_select(-2, self._key_link_indices)
-        world_link_rotations = robot_state.world_link_rotations.index_select(-2, self._key_link_indices)
+        world_link_positions = state.world_link_positions.index_select(-2, self._key_link_indices)
+        world_link_rotations = state.world_link_rotations.index_select(-2, self._key_link_indices)
         link_positions = transform_by_quat(
             world_link_positions - anchor_position.unsqueeze(-2), inverse_anchor_rotation.unsqueeze(-2)
         ).flatten(start_dim=-2)
@@ -137,26 +181,38 @@ class BeyondMimicTask(MotionTrackingTask):
             start_dim=-2
         )
 
-        critic = torch.cat(
-            (
-                motion_command,
-                anchor_position_error,
-                anchor_rotation_error,
-                root_linear_velocities,
-                root_angular_velocities,
-                joint_positions,
-                joint_velocities,
-                link_positions,
-                link_rotations,
-                previous_action,
-            ),
-            dim=-1,
-        )
-
         return {
-            "actor": actor,
-            "critic": critic,
+            "actor": torch.cat((motion_command, *actor_components, previous_action), dim=-1),
+            "critic": torch.cat((motion_command, *critic_components, link_positions, link_rotations, previous_action), dim=-1),
         }
+
+    def _observation_components(
+        self,
+        *,
+        anchor_position: torch.Tensor,
+        inverse_anchor_rotation: torch.Tensor,
+        root_velocity: torch.Tensor,
+        root_angular_velocity: torch.Tensor,
+        joint_dof_positions: torch.Tensor,
+        joint_dof_velocities: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        """Build shared actor and critic features from sensor readings or clean state values."""
+        reference_anchor_position = self._reference_state.world_link_positions[..., self._anchor_link_index, :]
+        reference_anchor_rotation = self._reference_state.world_link_rotations[..., self._anchor_link_index, :]
+        anchor_position_error = transform_by_quat(reference_anchor_position - anchor_position, inverse_anchor_rotation)
+        anchor_rotation_error = quat_to_rot6d(transform_quat_by_quat(reference_anchor_rotation, inverse_anchor_rotation))
+        root_linear_velocities = inv_transform_by_quat(root_velocity, self._state.root_rotation)
+        root_angular_velocities = inv_transform_by_quat(root_angular_velocity, self._state.root_rotation)
+        joint_positions = joint_dof_positions - self._robot.default_joint_positions
+
+        return (
+            anchor_position_error,
+            anchor_rotation_error,
+            root_linear_velocities,
+            root_angular_velocities,
+            joint_positions,
+            joint_dof_velocities,
+        )
 
     def _compute_reward(
         self,
@@ -269,14 +325,13 @@ class BeyondMimicTask(MotionTrackingTask):
 
         return (anchor_height_error > 0.25) | (end_effector_height_errors > 0.25).any(dim=-1) | (anchor_tilt_error > 0.8)
 
-    def compute_feedback(
+    def evaluate_step(
         self,
-        state: RobotState,
         *,
-        normalized_control_forces: torch.Tensor,
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
-    ) -> TaskFeedback:
+    ) -> TaskEvaluation:
+        state = self._state
         reward, reward_components = self._compute_reward(
             state,
             self._reference_state,
@@ -299,7 +354,7 @@ class BeyondMimicTask(MotionTrackingTask):
         terminal = self._compute_terminal(state, self._reference_state)
         self._reference_robot.record_failures(terminal)
         terminal = terminal | self._motion_finished
-        return TaskFeedback(
+        return TaskEvaluation(
             reward=reward,
             terminal=terminal,
             transition_metrics={

@@ -31,6 +31,7 @@ class Sensor:
                 dtype=value.dtype,
                 device=value.device,
             )
+        self.observation = torch.empty_like(value)
 
     def update(self, value: torch.Tensor) -> None:
         if self.is_passthrough:
@@ -44,32 +45,21 @@ class Sensor:
         if self._delay_buffer is not None:
             self._delay_buffer.update(self.observation)
             self.observation.copy_(self._delay_buffer.get_delayed())
-        return self.observation
 
-    def reset(self, value: torch.Tensor, environment_indices: torch.Tensor | None = None) -> None:
+    def reset(self, value: torch.Tensor, environment_indices: torch.Tensor) -> None:
         if self.is_passthrough:
             self.observation = value
             return
 
-        if environment_indices is None:
-            if self._noise_half_width == 0.0:
-                self.observation = value.clone()
-            else:
-                self.observation = torch.empty_like(value)
-                self._sample(value, self.observation)
-            if self._delay_buffer is not None:
-                self._delay_buffer.reset(self.observation)
+        selected_value = value[environment_indices]
+        if self._noise_half_width == 0.0:
+            sample = selected_value
         else:
-            selected_value = value[environment_indices]
-            if self._noise_half_width == 0.0:
-                sample = selected_value
-            else:
-                sample = torch.empty_like(selected_value)
-                self._sample(selected_value, sample)
-            self.observation.index_copy_(0, environment_indices, sample)
-            if self._delay_buffer is not None:
-                self._delay_buffer.reset(sample, environment_indices)
-        return self.observation
+            sample = torch.empty_like(selected_value)
+            self._sample(selected_value, sample)
+        self.observation.index_copy_(0, environment_indices, sample)
+        if self._delay_buffer is not None:
+            self._delay_buffer.reset(sample, environment_indices)
 
     def _sample(self, value: torch.Tensor, output: torch.Tensor) -> None:
         output.uniform_(-self._noise_half_width, self._noise_half_width).add_(value)

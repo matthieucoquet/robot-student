@@ -105,12 +105,9 @@ class RunInDirectionTask(Task):
         self._imu_sensor.initialize(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
     @torch.no_grad()
-    def reset(self, environment_indices: torch.Tensor | None = None) -> None:
+    def reset(self, environment_indices: torch.Tensor) -> None:
         simulator_observation = self._read_simulator_observation(environment_indices)
-        if environment_indices is None:
-            self._simulator_observation = simulator_observation
-        else:
-            self._simulator_observation[environment_indices] = simulator_observation
+        self._simulator_observation[environment_indices] = simulator_observation
         if not self._joint_dof_velocities_sensor.is_passthrough:
             self._joint_dof_velocities_sensor.reset(self._simulator_observation.joint_dof_velocities, environment_indices)
         if not self._imu_sensor.is_passthrough:

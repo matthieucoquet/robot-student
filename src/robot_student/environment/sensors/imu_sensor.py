@@ -15,7 +15,7 @@ class IMUSensor(Sensor):
         self,
         rotation: torch.Tensor,
         angular_velocity: torch.Tensor,
-        environment_indices: torch.Tensor | None = None,
+        environment_indices: torch.Tensor,
     ) -> None:
         torch.cat((rotation, angular_velocity), dim=-1, out=self._imu_values)
         super().reset(self._imu_values, environment_indices)

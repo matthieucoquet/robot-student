@@ -4,11 +4,10 @@ from pathlib import Path
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
 
-from robot_student.engine.robot_observation import RobotObservation
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
-from robot_student.environment.task.task import TaskFeedback
+from robot_student.environment.task.task import TaskEvaluation
 from robot_student.motion import MotionLibrary
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
 
@@ -21,6 +20,7 @@ class DeepMimicTask(MotionTrackingTask):
         motion_library: MotionLibrary,
         target_steps: Sequence[float],
         joint_reward_weight: Sequence[float],
+        key_link_names: Sequence[str] = (),
         show_reference_motion: bool = False,
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
         reset_perturbation_configuration: ResetPerturbationConfiguration | None = None,
@@ -28,11 +28,13 @@ class DeepMimicTask(MotionTrackingTask):
         super().__init__(
             xml_path=xml_path,
             motion_library=motion_library,
+            key_link_names=key_link_names,
             show_reference_motion=show_reference_motion,
             reference_motion_offset=reference_motion_offset,
             reset_perturbation_configuration=reset_perturbation_configuration,
         )
 
+        self._global_observation = True
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
 
@@ -52,10 +54,9 @@ class DeepMimicTask(MotionTrackingTask):
             ),
         }
 
-    def observation(
-        self, robot_state: RobotState, *, robot_observation: RobotObservation, previous_action: torch.Tensor
-    ) -> dict[str, torch.Tensor]:
-        """Build shared clean features; robot_observation is intentionally unused."""
+    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Build shared clean features from the task-local physical state."""
+        robot_state = self._state
         targets = self._reference_robot.get_target_states(self._simulation_steps_per_control_step, self._target_steps)
 
         key_link_positions = targets.world_link_positions.index_select(-2, self._key_link_indices)
@@ -168,18 +169,17 @@ class DeepMimicTask(MotionTrackingTask):
         terminal.logical_or_(self._motion_finished)
         return terminal
 
-    def compute_feedback(
+    def evaluate_step(
         self,
-        state: RobotState,
         *,
-        normalized_control_forces: torch.Tensor,
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
-    ) -> TaskFeedback:
+    ) -> TaskEvaluation:
+        state = self._state
         reward, reward_components = self._compute_reward(state, self._reference_state)
         pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward = reward_components
         terminal = self._compute_terminal(state, self._reference_state)
-        return TaskFeedback(
+        return TaskEvaluation(
             reward=reward,
             terminal=terminal,
             transition_metrics={
