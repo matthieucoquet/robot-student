@@ -13,6 +13,8 @@ class Bam:
     the voltage after the load-dependent drop and defaults to 0.0 V.
     max_current optionally limits motor current in amps through the firmware PWM command.
     PWM saturation can prevent reaching this limit at high speed. None disables the limiter.
+    friction_scale multiplies the complete non-viscous friction budget; it accepts a scalar
+    or a tensor shaped [num_envs, 1]. Viscous damping stays nominal.
 
     Construct after scene.build(); construction configures actuator DOF properties.
     """
@@ -27,6 +29,7 @@ class Bam:
         input_voltage_drop_resistance: float | torch.Tensor | None = None,
         minimum_input_voltage: float = 0.0,
         max_current: float | None = None,
+        friction_scale: float | torch.Tensor = 1.0,
     ):
         if minimum_input_voltage is None:
             raise TypeError("minimum_input_voltage must be a float, not None")
@@ -36,6 +39,7 @@ class Bam:
         self._input_voltage = input_voltage
         self._input_voltage_drop_resistance = input_voltage_drop_resistance
         self._minimum_input_voltage = minimum_input_voltage
+        self._friction_scale = friction_scale
 
         self._actuator_parameters = Xl330ActuatorParameters(max_current=max_current)
 
@@ -146,7 +150,8 @@ class Bam:
             parameters.load_friction_external_quad * absolute_external_torque.square(),
             parameters.load_friction_motor_quad * absolute_motor_torque.square(),
         )
-        return frictionloss + stribeck_coeff * quadratic_term
+        frictionloss = frictionloss + stribeck_coeff * quadratic_term
+        return frictionloss.mul_(self._friction_scale)
 
     @torch.no_grad()
     def step(self, target: torch.Tensor) -> torch.Tensor:

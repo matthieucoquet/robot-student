@@ -202,7 +202,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             friction_ratio_range=(0.3, 1.6),
             default_joint_position_offset_range=(-0.01, 0.01),
             center_of_mass=CenterOfMassRandomization(
-                link_name="torso_link",
+                link_names=("torso_link",),
                 x_range=(-0.025, 0.025),
                 y_range=(-0.05, 0.05),
                 z_range=(-0.05, 0.05),

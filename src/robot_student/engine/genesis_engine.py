@@ -62,9 +62,13 @@ class GenesisEngine:
         morph = gs.morphs.MJCF(file=str(xml_path))
         if isinstance(control_mode, BamControlMode):
             self._scene.options.rigid.batch_dofs_info = True
-        if domain_randomization_configuration is not None and domain_randomization_configuration.center_of_mass is not None:
-            self._scene.options.rigid.batch_links_info = True
-            morph.align = False
+        if domain_randomization_configuration is not None:
+            if domain_randomization_configuration.armature_scale_range is not None:
+                self._scene.options.rigid.batch_dofs_info = True
+            if domain_randomization_configuration.center_of_mass is not None or domain_randomization_configuration.mass_inertia is not None:
+                self._scene.options.rigid.batch_links_info = True
+            if domain_randomization_configuration.center_of_mass is not None:
+                morph.align = False
         entity = self._scene.add_entity(morph)
         robot = Robot(
             entity,

@@ -8,10 +8,13 @@ def microduck_configuration():
 
     control_mode = BamControlMode(
         input_voltage=7.4,
+        input_voltage_range=(6.9, 7.9),
         input_voltage_drop_resistance=0.1,
+        input_voltage_drop_resistance_range=(0.05, 0.15),
         minimum_input_voltage=6.0,
         max_current=None,
         action_limit_scale=1.4,
+        friction_scale_range=(0.9, 1.1),
     )
 
     initial_joint_positions = (

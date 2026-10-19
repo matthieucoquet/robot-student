@@ -14,16 +14,28 @@ from .kinematic_robot import KinematicRobot
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class CenterOfMassRandomization:
-    link_name: str
+    """Independent uniform offsets in meters along each selected link's local axes."""
+
+    link_names: tuple[str, ...]
     x_range: tuple[float, float] = (0.0, 0.0)
     y_range: tuple[float, float] = (0.0, 0.0)
     z_range: tuple[float, float] = (0.0, 0.0)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
+class MassInertiaRandomization:
+    link_names: tuple[str, ...]
+    scale_range: tuple[float, float]
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
 class DomainRandomizationConfiguration:
     friction_ratio_range: tuple[float, float] | None = None
+    friction_link_names: tuple[str, ...] | None = None  # None selects all links.
+    friction_shared_across_links: bool = False
     center_of_mass: CenterOfMassRandomization | None = None
+    mass_inertia: MassInertiaRandomization | None = None
+    armature_scale_range: tuple[float, float] | None = None  # Independent multiplier per controlled DOF and environment.
     default_joint_position_offset_range: tuple[float, float] | None = None
 
 
@@ -51,31 +63,51 @@ class Robot(KinematicRobot):
 
     @torch.no_grad()
     def configure_post_build(self, environment_count: int) -> None:
-        self.configure_domain_randomization(environment_count)
         self.configure_control_mode()
+        self.configure_domain_randomization(environment_count)
         self.configure_delays(environment_count)
 
     def configure_domain_randomization(self, environment_count: int) -> None:
-        """Sample after scene building, before registering the scene's initial state."""
+        """Sample once after scene building; the registered initial state preserves these values across resets."""
         configuration = self._domain_randomization_configuration
         if configuration is None:
             return
 
         if configuration.friction_ratio_range is not None:
-            friction_ratio = torch.empty((environment_count, self.n_links), dtype=gs.tc_float, device=gs.device)
+            link_indices = None if configuration.friction_link_names is None else self.get_link_indices(configuration.friction_link_names)
+            link_count = self.n_links if link_indices is None else len(link_indices)
+            sample_count = 1 if configuration.friction_shared_across_links else link_count
+            friction_ratio = torch.empty((environment_count, sample_count), dtype=gs.tc_float, device=gs.device)
             friction_ratio.uniform_(*configuration.friction_ratio_range)
-            self._entity.set_friction_ratio(friction_ratio)
+            if configuration.friction_shared_across_links:
+                friction_ratio = friction_ratio.expand(-1, link_count)
+            self._entity.set_friction_ratio(friction_ratio, links_idx_local=link_indices)
 
         if configuration.center_of_mass is not None:
             center_of_mass = configuration.center_of_mass
-            link_name = center_of_mass.link_name
-            center_of_mass_link_indices = self.get_link_indices((link_name,))
-            offsets = torch.empty((environment_count, 1, 3), dtype=gs.tc_float, device=gs.device)
+            center_of_mass_link_indices = self.get_link_indices(center_of_mass.link_names)
+            offsets = torch.empty((environment_count, len(center_of_mass_link_indices), 3), dtype=gs.tc_float, device=gs.device)
             for axis, bounds in enumerate((center_of_mass.x_range, center_of_mass.y_range, center_of_mass.z_range)):
                 offsets[..., axis].uniform_(*bounds)
             original_center_of_mass = self._entity.get_links_COM(links_idx_local=center_of_mass_link_indices)
             offsets.add_(original_center_of_mass)
             self._entity.set_links_COM(offsets, links_idx_local=center_of_mass_link_indices)
+
+        if configuration.mass_inertia is not None:
+            mass_inertia = configuration.mass_inertia
+            link_indices = self.get_link_indices(mass_inertia.link_names)
+            scale = torch.empty((environment_count, len(link_indices)), dtype=gs.tc_float, device=gs.device)
+            scale.uniform_(*mass_inertia.scale_range)
+            nominal_mass = self._entity.get_links_mass(links_idx_local=link_indices)
+            nominal_inertia = self._entity.get_links_inertia(links_idx_local=link_indices)
+            self._entity.set_links_mass(nominal_mass * scale, links_idx_local=link_indices)
+            self._entity.set_links_inertia(nominal_inertia * scale[..., None, None], links_idx_local=link_indices)
+
+        if configuration.armature_scale_range is not None:
+            nominal_armature = self._entity.get_dofs_armature(self._controlled_dof_indices)
+            scale = nominal_armature.new_empty((environment_count, self.n_controlled_dofs))
+            scale.uniform_(*configuration.armature_scale_range)
+            self._entity.set_dofs_armature(nominal_armature * scale, self._controlled_dof_indices)
 
     def configure_delays(self, environment_count: int) -> None:
         self._command_delay_buffer = None
@@ -126,13 +158,20 @@ class Robot(KinematicRobot):
         match self._control_mode:
             case BamControlMode() as configuration:
                 joint_positions = self._entity.get_dofs_position(self._controlled_dof_indices)
+                self._input_voltage = joint_positions.new_full((*joint_positions.shape[:-1], 1), configuration.input_voltage)
+                self._input_voltage_drop_resistance = configuration.input_voltage_drop_resistance
+                if configuration.input_voltage_drop_resistance_range is not None:
+                    self._input_voltage_drop_resistance = torch.empty_like(self._input_voltage)
+                self._friction_scale = torch.ones_like(self._input_voltage)
+                self._randomize_actuator_parameters()
                 self._bam = Bam(
                     entity=self._entity,
                     controlled_dofs_indices=self._controlled_dof_indices,
-                    input_voltage=joint_positions.new_tensor(configuration.input_voltage),
-                    input_voltage_drop_resistance=configuration.input_voltage_drop_resistance,
+                    input_voltage=self._input_voltage,
+                    input_voltage_drop_resistance=self._input_voltage_drop_resistance,
                     minimum_input_voltage=configuration.minimum_input_voltage,
                     max_current=configuration.max_current,
+                    friction_scale=self._friction_scale,
                 )
                 parameters = self._bam.actuator_parameters
                 maximum_torque = parameters.kt * configuration.input_voltage * parameters.max_pwm / parameters.R
@@ -270,11 +309,32 @@ class Robot(KinematicRobot):
 
     @torch.no_grad()
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
-        """Reset actuator and command history for selected environments."""
+        """Reset actuator history and resample BAM parameters for selected environments."""
         if self._command_delay_buffer is not None:
             self._command_delay_buffer.reset(self._default_control_positions, environment_indices)
         if self._bam is not None:
             self._bam.reset(environment_indices)
+            self._randomize_actuator_parameters(environment_indices)
+
+    def _randomize_actuator_parameters(self, environment_indices: torch.Tensor | None = None) -> None:
+        """Sample shared battery parameters and friction scale per environment, held fixed until the next reset."""
+        configuration = self._control_mode
+        if not isinstance(configuration, BamControlMode):
+            return
+
+        for values, bounds in (
+            (self._input_voltage, configuration.input_voltage_range),
+            (self._input_voltage_drop_resistance, configuration.input_voltage_drop_resistance_range),
+            (self._friction_scale, configuration.friction_scale_range),
+        ):
+            if bounds is None:
+                continue
+            if environment_indices is None:
+                values.uniform_(*bounds)
+            else:
+                samples = values.new_empty((environment_indices.numel(), *values.shape[1:]))
+                samples.uniform_(*bounds)
+                values[environment_indices] = samples
 
 
 def scale_joint_position_limits(

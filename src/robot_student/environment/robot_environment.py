@@ -36,6 +36,7 @@ class RobotEnvironment(Environment):
         initial_pose: Sequence[float],
         maximum_episode_steps: int = 1_000,
         *,
+        ground_friction: float | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
         command_delay_configuration: CommandDelayConfiguration | None = None,
         push_configuration: PushConfiguration | None = None,
@@ -43,7 +44,7 @@ class RobotEnvironment(Environment):
         self._engine = engine
         self._task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
-        self._engine.add_ground_plane()
+        self._engine.add_ground_plane(friction=ground_friction)
         self._robot = engine.add_robot(
             xml_path,
             control_mode=control_mode,

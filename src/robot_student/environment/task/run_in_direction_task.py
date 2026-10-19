@@ -42,6 +42,7 @@ class RunInDirectionTask(Task):
         control_cost_weight: float = 0.5,
         pose_cost_weight: float = 0.1,
         height_range: tuple[float, float] = (0.2, 1.0),
+        joint_dof_positions_sensor: Sensor | None = None,
         joint_dof_velocities_sensor: Sensor | None = None,
         imu_sensor: IMUSensor | None = None,
     ) -> None:
@@ -49,9 +50,14 @@ class RunInDirectionTask(Task):
         if not math.isclose(direction_norm, 1.0, rel_tol=1e-6, abs_tol=1e-6):
             raise ValueError(f"direction must be normalized, got norm {direction_norm}")
 
+        self._joint_dof_positions_sensor = joint_dof_positions_sensor or Sensor()
         self._joint_dof_velocities_sensor = joint_dof_velocities_sensor or Sensor()
         self._imu_sensor = imu_sensor or IMUSensor()
-        self._sensors_enabled = not (self._joint_dof_velocities_sensor.is_passthrough and self._imu_sensor.is_passthrough)
+        self._sensors_enabled = not (
+            self._joint_dof_positions_sensor.is_passthrough
+            and self._joint_dof_velocities_sensor.is_passthrough
+            and self._imu_sensor.is_passthrough
+        )
         self._imu_link_name = imu_link_name
         self._key_link_names = key_link_names
         self._world_gravity = torch.tensor((0.0, 0.0, -1.0), device=device, dtype=torch.float32)
@@ -101,13 +107,17 @@ class RunInDirectionTask(Task):
             device=robot.default_control.device,
         )
         self._simulator_observation = self._read_simulator_observation()
+        self._joint_dof_positions_sensor.initialize(self._simulator_observation.joint_dof_positions)
         self._joint_dof_velocities_sensor.initialize(self._simulator_observation.joint_dof_velocities)
-        self._imu_sensor.initialize(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
+        if not self._imu_sensor.is_passthrough:
+            self._imu_sensor.initialize(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
     @torch.no_grad()
     def reset(self, environment_indices: torch.Tensor) -> None:
         simulator_observation = self._read_simulator_observation(environment_indices)
         self._simulator_observation[environment_indices] = simulator_observation
+        if not self._joint_dof_positions_sensor.is_passthrough:
+            self._joint_dof_positions_sensor.reset(self._simulator_observation.joint_dof_positions, environment_indices)
         if not self._joint_dof_velocities_sensor.is_passthrough:
             self._joint_dof_velocities_sensor.reset(self._simulator_observation.joint_dof_velocities, environment_indices)
         if not self._imu_sensor.is_passthrough:
@@ -126,8 +136,10 @@ class RunInDirectionTask(Task):
     def measure_state(self) -> None:
         """Capture the full batch and advance sensor histories once after a control interval."""
         self._simulator_observation = self._read_simulator_observation()
+        self._joint_dof_positions_sensor.update(self._simulator_observation.joint_dof_positions)
         self._joint_dof_velocities_sensor.update(self._simulator_observation.joint_dof_velocities)
-        self._imu_sensor.update(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
+        if not self._imu_sensor.is_passthrough:
+            self._imu_sensor.update(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
     @torch.no_grad()
     def _read_simulator_observation(self, environment_indices: torch.Tensor | None = None) -> SimulatorObservation:
@@ -163,9 +175,10 @@ class RunInDirectionTask(Task):
         actor_components = critic_components
         if self._sensors_enabled:
             if not self._imu_sensor.is_passthrough:
-                actor_inverse_imu_rotation = inv_quat(self._imu_sensor.rotation)
-                imu_angular_velocity = transform_by_quat(self._imu_sensor.angular_velocity, actor_inverse_imu_rotation)
-                projected_gravity = transform_by_quat(self._world_gravity, actor_inverse_imu_rotation)
+                imu_angular_velocity = self._imu_sensor.angular_velocity
+                projected_gravity = self._imu_sensor.projected_gravity
+            if not self._joint_dof_positions_sensor.is_passthrough:
+                joint_dof_positions = self._joint_dof_positions_sensor.observation - self._robot.default_joint_positions
             if not self._joint_dof_velocities_sensor.is_passthrough:
                 joint_dof_velocities = self._joint_dof_velocities_sensor.observation
             actor_components = (imu_angular_velocity, projected_gravity, joint_dof_positions, joint_dof_velocities, previous_action)

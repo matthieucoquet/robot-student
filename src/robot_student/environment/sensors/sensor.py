@@ -4,15 +4,23 @@ from robot_student.util.delay_buffer import DelayBuffer
 
 
 class Sensor:
+    """Apply fresh uniform noise and fixed per-environment, per-component bias before observation delays.
+
+    Calibration bias is sampled at initialization and retained through episode resets.
+    """
+
     def __init__(
         self,
         *,
+        bias_half_width: float = 0.0,
         noise_half_width: float = 0.0,
         delay_control_steps_range: tuple[int, int] | None = None,
     ) -> None:
         if delay_control_steps_range == (0, 0):
             delay_control_steps_range = None
-        self.is_passthrough = noise_half_width == 0.0 and delay_control_steps_range is None
+        self.is_passthrough = bias_half_width == 0.0 and noise_half_width == 0.0 and delay_control_steps_range is None
+        self._bias_half_width = bias_half_width
+        self._bias: torch.Tensor | None = None
         self._noise_half_width = noise_half_width
         self._delay_control_steps_range = delay_control_steps_range
         self._delay_buffer: DelayBuffer | None = None
@@ -22,6 +30,9 @@ class Sensor:
         if self.is_passthrough:
             return
 
+        self._bias = None
+        if self._bias_half_width != 0.0:
+            self._bias = torch.empty_like(value).uniform_(-self._bias_half_width, self._bias_half_width)
         self._delay_buffer = None
         if self._delay_control_steps_range is not None:
             self._delay_buffer = DelayBuffer(
@@ -42,6 +53,8 @@ class Sensor:
             self.observation.copy_(value)
         else:
             self._sample(value, self.observation)
+        if self._bias is not None:
+            self.observation.add_(self._bias)
         if self._delay_buffer is not None:
             self._delay_buffer.update(self.observation)
             self.observation.copy_(self._delay_buffer.get_delayed())
@@ -57,6 +70,8 @@ class Sensor:
         else:
             sample = torch.empty_like(selected_value)
             self._sample(selected_value, sample)
+        if self._bias is not None:
+            sample.add_(self._bias[environment_indices])
         self.observation.index_copy_(0, environment_indices, sample)
         if self._delay_buffer is not None:
             self._delay_buffer.reset(sample, environment_indices)
