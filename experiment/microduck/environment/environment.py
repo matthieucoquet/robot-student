@@ -10,6 +10,7 @@ from robot_student.engine.robot import (
 )
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
+from robot_student.environment.robot_environment import PushConfiguration
 from robot_student.environment.sensors import IMUSensor, Sensor
 from robot_student.run.environment_factory import EnvironmentFactory
 
@@ -53,9 +54,11 @@ class PPOEnvironmentFactory(EnvironmentFactory):
         #     joint_position_half_width=0.1,
         # )
 
-        # push_configuration = PushConfiguration(
-        #     interval_seconds=2.0, linear_velocity_half_width=(0.5, 0.5, 0.2), angular_velocity_half_width=(0.52, 0.52, 0.78)
-        # )
+        push_configuration = PushConfiguration(
+            interval_seconds=4.5,  # Midpoint of microduck_rl's 3–6 second interval range.
+            linear_velocity_half_width=(0.3, 0.3, 0.0),
+            angular_velocity_half_width=(0.0, 0.0, 0.0),
+        )
 
         key_link_names = ("ankle_left", "ankle_right", "jaw_soft")
 
@@ -92,5 +95,5 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             ground_friction=0.5,  # Below the minimum foot coefficient, since Genesis takes the maximum of both surfaces.
             domain_randomization_configuration=domain_randomization_configuration,
             command_delay_configuration=command_delay_configuration,
-            # push_configuration=push_configuration,
+            push_configuration=push_configuration,
         )
