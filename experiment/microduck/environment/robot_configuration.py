@@ -4,7 +4,7 @@ from robot_student.engine.control_mode import BamControlMode
 
 
 def microduck_configuration():
-    mjcf_path = Path(__file__).parent / "mjcf" / "microduck" / "robot_walk.xml"
+    mjcf_path = Path(__file__).parent / "mjcf" / "microduck" / "robot_walk_backlash.xml"
 
     control_mode = BamControlMode(
         input_voltage=7.4,
@@ -34,6 +34,9 @@ def microduck_configuration():
         -0.452984,
     )
 
+    # This XML places a passive backlash hinge immediately after every motor hinge.
+    # Keep the 14 servo targets above; reset the 28 joint coordinates with the play centered.
+    initial_joint_coordinates = tuple(coordinate for position in initial_joint_positions for coordinate in (position, 0.0))
     initial_pose = (
         0,
         0,
@@ -42,7 +45,7 @@ def microduck_configuration():
         0,
         0,
         0,
-        *initial_joint_positions,
+        *initial_joint_coordinates,
     )
 
     return mjcf_path, control_mode, initial_pose, initial_joint_positions

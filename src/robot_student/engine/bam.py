@@ -2,6 +2,7 @@ import genesis as gs
 import torch
 from genesis.utils.misc import qd_to_torch
 
+from robot_student.engine.servo_joints import ServoJoints
 from robot_student.engine.xl330_m6 import Xl330ActuatorParameters
 
 
@@ -16,6 +17,9 @@ class Bam:
     friction_scale multiplies the complete non-viscous friction budget; it accepts a scalar
     or a tensor shaped [num_envs, 1]. Viscous damping stays nominal.
 
+    Position feedback uses the servo encoder through any backlash. Back-EMF and
+    friction use motor velocity; the policy's Sensor noise and delay are not applied.
+
     Construct after scene.build(); construction configures actuator DOF properties.
     """
 
@@ -23,7 +27,7 @@ class Bam:
     def __init__(
         self,
         entity,
-        controlled_dofs_indices,
+        servo_joints: ServoJoints,
         input_voltage: torch.Tensor,
         *,
         input_voltage_drop_resistance: float | torch.Tensor | None = None,
@@ -35,7 +39,8 @@ class Bam:
             raise TypeError("minimum_input_voltage must be a float, not None")
 
         self._entity = entity
-        self._controlled_dofs_indices = controlled_dofs_indices
+        self._servo_joints = servo_joints
+        self._controlled_dofs_indices = servo_joints.motor_dof_indices
         self._input_voltage = input_voltage
         self._input_voltage_drop_resistance = input_voltage_drop_resistance
         self._minimum_input_voltage = minimum_input_voltage
@@ -47,7 +52,7 @@ class Bam:
         if solver.n_envs > 0 and not solver._options.batch_dofs_info:
             raise ValueError("BAM requires RigidOptions(batch_dofs_info=True) for batched environments")
 
-        dofs_velocity = entity.get_dofs_velocity(self._controlled_dofs_indices)
+        dofs_velocity = servo_joints.get_motor_velocities()
         self._global_dofs_indices = torch.as_tensor(self._controlled_dofs_indices, dtype=torch.long, device=dofs_velocity.device)
         self._global_dofs_indices = self._global_dofs_indices + entity.dof_start
         self._previous_duty_cycle = torch.zeros_like(dofs_velocity)
@@ -163,8 +168,8 @@ class Bam:
         """
         entity = self._entity
         solver = entity.solver
-        dofs_position = entity.get_dofs_position(self._controlled_dofs_indices)
-        dofs_velocity = entity.get_dofs_velocity(self._controlled_dofs_indices)
+        encoder_positions = self._servo_joints.get_encoder_positions()
+        motor_velocities = self._servo_joints.get_motor_velocities()
 
         previous_motor_torque = qd_to_torch(solver.dyn_state.dofs.qf_applied, transpose=True)[:, self._global_dofs_indices]
 
@@ -176,11 +181,11 @@ class Bam:
             if solver.n_envs == 0:
                 input_voltage = input_voltage.squeeze(0)
 
-        control = self._compute_control(target, dofs_position, dofs_velocity, input_voltage)
-        motor_torque = self._compute_motor_torque(control, dofs_velocity)
+        control = self._compute_control(target, encoder_positions, motor_velocities, input_voltage)
+        motor_torque = self._compute_motor_torque(control, motor_velocities)
 
         stribeck = torch.exp(
-            -torch.pow(torch.abs(dofs_velocity) / self._actuator_parameters.dtheta_stribeck, self._actuator_parameters.alpha)
+            -torch.pow(torch.abs(motor_velocities) / self._actuator_parameters.dtheta_stribeck, self._actuator_parameters.alpha)
         )
 
         external_torque = self._compute_external_torque()

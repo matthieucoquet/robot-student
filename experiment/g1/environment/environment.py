@@ -29,7 +29,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
         task = RunInDirectionTask(
             device=engine.device,
             imu_link_name="pelvis",
-            default_joint_positions=initial_joint_positions,
+            default_encoder_positions=initial_joint_positions,
             height_range=(0.5, 1.5),
             target_height=0.7,
             target_speed=1.1,

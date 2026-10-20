@@ -16,8 +16,8 @@ class SimulatorObservation(TensorClass["autocast"]):
     root_position: torch.Tensor
     root_rotation: torch.Tensor
     root_velocity: torch.Tensor
-    joint_dof_positions: torch.Tensor
-    joint_dof_velocities: torch.Tensor
+    encoder_positions: torch.Tensor
+    encoder_velocities: torch.Tensor
     imu_position: torch.Tensor
     imu_rotation: torch.Tensor
     imu_angular_velocity: torch.Tensor
@@ -26,11 +26,13 @@ class SimulatorObservation(TensorClass["autocast"]):
 
 
 class RunInDirectionTask(Task):
+    """Walking observations and pose costs use servo encoder coordinates, including gear play."""
+
     def __init__(
         self,
         *,
         imu_link_name: str,
-        default_joint_positions: Sequence[float],
+        default_encoder_positions: Sequence[float],
         device: torch.device,
         key_link_names: Sequence[str] = (),
         direction: tuple[float, float] = (1.0, 0.0),
@@ -42,20 +44,20 @@ class RunInDirectionTask(Task):
         control_cost_weight: float = 0.5,
         pose_cost_weight: float = 0.1,
         height_range: tuple[float, float] = (0.2, 1.0),
-        joint_dof_positions_sensor: Sensor | None = None,
-        joint_dof_velocities_sensor: Sensor | None = None,
+        encoder_positions_sensor: Sensor | None = None,
+        encoder_velocities_sensor: Sensor | None = None,
         imu_sensor: IMUSensor | None = None,
     ) -> None:
         direction_norm = math.hypot(*direction)
         if not math.isclose(direction_norm, 1.0, rel_tol=1e-6, abs_tol=1e-6):
             raise ValueError(f"direction must be normalized, got norm {direction_norm}")
 
-        self._joint_dof_positions_sensor = joint_dof_positions_sensor or Sensor()
-        self._joint_dof_velocities_sensor = joint_dof_velocities_sensor or Sensor()
+        self._encoder_positions_sensor = encoder_positions_sensor or Sensor()
+        self._encoder_velocities_sensor = encoder_velocities_sensor or Sensor()
         self._imu_sensor = imu_sensor or IMUSensor()
         self._sensors_enabled = not (
-            self._joint_dof_positions_sensor.is_passthrough
-            and self._joint_dof_velocities_sensor.is_passthrough
+            self._encoder_positions_sensor.is_passthrough
+            and self._encoder_velocities_sensor.is_passthrough
             and self._imu_sensor.is_passthrough
         )
         self._imu_link_name = imu_link_name
@@ -70,11 +72,11 @@ class RunInDirectionTask(Task):
         self._facing_direction_weight = facing_direction_weight
         self._control_cost_weight = control_cost_weight
         self._pose_cost_weight = pose_cost_weight
-        self._default_joint_positions = torch.tensor(default_joint_positions, device=device, dtype=torch.float32)
+        self._default_encoder_positions = torch.tensor(default_encoder_positions, device=device, dtype=torch.float32)
         self._minimum_healthy_height, self._maximum_healthy_height = height_range
 
     def get_schema(self) -> dict[str, TensorSchema]:
-        joint_count = self._robot.n_joint_dofs
+        joint_count = self._robot.n_controlled_dofs
         link_count = self._key_link_indices.numel()
 
         imu_states = 6
@@ -97,6 +99,8 @@ class RunInDirectionTask(Task):
         simulation_steps_per_control_step: int,
     ) -> None:
         self._robot = robot
+        if self._default_encoder_positions.shape != (robot.n_controlled_dofs,):
+            raise ValueError("default_encoder_positions must contain one value per servo in control order")
         key_link_indices = robot.get_link_indices(self._key_link_names)
         self._imu_link_index = robot.get_link_indices((self._imu_link_name,))[0]
         self._capture_link_indices = tuple(dict.fromkeys((*key_link_indices, self._imu_link_index)))
@@ -107,8 +111,8 @@ class RunInDirectionTask(Task):
             device=robot.default_control.device,
         )
         self._simulator_observation = self._read_simulator_observation()
-        self._joint_dof_positions_sensor.initialize(self._simulator_observation.joint_dof_positions)
-        self._joint_dof_velocities_sensor.initialize(self._simulator_observation.joint_dof_velocities)
+        self._encoder_positions_sensor.initialize(self._simulator_observation.encoder_positions)
+        self._encoder_velocities_sensor.initialize(self._simulator_observation.encoder_velocities)
         if not self._imu_sensor.is_passthrough:
             self._imu_sensor.initialize(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
@@ -116,10 +120,10 @@ class RunInDirectionTask(Task):
     def reset(self, environment_indices: torch.Tensor) -> None:
         simulator_observation = self._read_simulator_observation(environment_indices)
         self._simulator_observation[environment_indices] = simulator_observation
-        if not self._joint_dof_positions_sensor.is_passthrough:
-            self._joint_dof_positions_sensor.reset(self._simulator_observation.joint_dof_positions, environment_indices)
-        if not self._joint_dof_velocities_sensor.is_passthrough:
-            self._joint_dof_velocities_sensor.reset(self._simulator_observation.joint_dof_velocities, environment_indices)
+        if not self._encoder_positions_sensor.is_passthrough:
+            self._encoder_positions_sensor.reset(self._simulator_observation.encoder_positions, environment_indices)
+        if not self._encoder_velocities_sensor.is_passthrough:
+            self._encoder_velocities_sensor.reset(self._simulator_observation.encoder_velocities, environment_indices)
         if not self._imu_sensor.is_passthrough:
             self._imu_sensor.reset(
                 self._simulator_observation.imu_rotation,
@@ -136,8 +140,8 @@ class RunInDirectionTask(Task):
     def measure_state(self) -> None:
         """Capture the full batch and advance sensor histories once after a control interval."""
         self._simulator_observation = self._read_simulator_observation()
-        self._joint_dof_positions_sensor.update(self._simulator_observation.joint_dof_positions)
-        self._joint_dof_velocities_sensor.update(self._simulator_observation.joint_dof_velocities)
+        self._encoder_positions_sensor.update(self._simulator_observation.encoder_positions)
+        self._encoder_velocities_sensor.update(self._simulator_observation.encoder_velocities)
         if not self._imu_sensor.is_passthrough:
             self._imu_sensor.update(self._simulator_observation.imu_rotation, self._simulator_observation.imu_angular_velocity)
 
@@ -152,8 +156,8 @@ class RunInDirectionTask(Task):
             root_position=positions[..., :3],
             root_rotation=positions[..., 3 : self._robot.n_root_qs],
             root_velocity=velocities[..., :3],
-            joint_dof_positions=positions[..., self._robot.n_root_qs :],
-            joint_dof_velocities=velocities[..., self._robot.n_root_dofs :],
+            encoder_positions=self._robot.servo_joints.get_encoder_positions(environment_indices),
+            encoder_velocities=self._robot.servo_joints.get_encoder_velocities(environment_indices),
             imu_position=link_positions[..., self._imu_capture_link_index, :],
             imu_rotation=link_rotations[..., self._imu_capture_link_index, :],
             imu_angular_velocity=self._robot.get_links_angular_velocity(environment_indices, link_indices=(self._imu_link_index,))[
@@ -169,19 +173,19 @@ class RunInDirectionTask(Task):
         critic_inverse_imu_rotation = inv_quat(simulator_observation.imu_rotation)
         imu_angular_velocity = transform_by_quat(simulator_observation.imu_angular_velocity, critic_inverse_imu_rotation)
         projected_gravity = transform_by_quat(self._world_gravity, critic_inverse_imu_rotation)
-        joint_dof_positions = simulator_observation.joint_dof_positions - self._robot.default_joint_positions
-        joint_dof_velocities = simulator_observation.joint_dof_velocities
-        critic_components = (imu_angular_velocity, projected_gravity, joint_dof_positions, joint_dof_velocities, previous_action)
+        encoder_positions = simulator_observation.encoder_positions - self._robot.default_encoder_positions
+        encoder_velocities = simulator_observation.encoder_velocities
+        critic_components = (imu_angular_velocity, projected_gravity, encoder_positions, encoder_velocities, previous_action)
         actor_components = critic_components
         if self._sensors_enabled:
             if not self._imu_sensor.is_passthrough:
                 imu_angular_velocity = self._imu_sensor.angular_velocity
                 projected_gravity = self._imu_sensor.projected_gravity
-            if not self._joint_dof_positions_sensor.is_passthrough:
-                joint_dof_positions = self._joint_dof_positions_sensor.observation - self._robot.default_joint_positions
-            if not self._joint_dof_velocities_sensor.is_passthrough:
-                joint_dof_velocities = self._joint_dof_velocities_sensor.observation
-            actor_components = (imu_angular_velocity, projected_gravity, joint_dof_positions, joint_dof_velocities, previous_action)
+            if not self._encoder_positions_sensor.is_passthrough:
+                encoder_positions = self._encoder_positions_sensor.observation - self._robot.default_encoder_positions
+            if not self._encoder_velocities_sensor.is_passthrough:
+                encoder_velocities = self._encoder_velocities_sensor.observation
+            actor_components = (imu_angular_velocity, projected_gravity, encoder_positions, encoder_velocities, previous_action)
         if self._key_link_indices.numel():
             world_link_positions = simulator_observation.world_link_positions.index_select(-2, self._key_link_indices)
             world_link_rotations = simulator_observation.world_link_rotations.index_select(-2, self._key_link_indices)
@@ -219,7 +223,7 @@ class RunInDirectionTask(Task):
         facing_direction_reward = torch.cos(heading_angle(simulator_observation.root_rotation) - self._direction_heading)
 
         control_cost = torch.mean(self._normalized_control_forces.square(), dim=-1)
-        pose_cost = torch.mean((simulator_observation.joint_dof_positions - self._default_joint_positions).square(), dim=-1)
+        pose_cost = torch.mean((simulator_observation.encoder_positions - self._default_encoder_positions).square(), dim=-1)
         stay_alive_reward = root_height_is_healthy * 0.05
         reward = (
             stay_alive_reward

@@ -7,6 +7,7 @@ from genesis.utils.geom import inv_transform_by_quat
 
 from robot_student.engine.bam import Bam
 from robot_student.engine.control_mode import BamControlMode, ControlMode, PositionControlMode
+from robot_student.engine.servo_joints import ServoJoints
 from robot_student.util.delay_buffer import DelayBuffer
 
 from .kinematic_robot import KinematicRobot
@@ -59,7 +60,8 @@ class Robot(KinematicRobot):
         self._control_mode = control_mode
         self._bam: Bam | None = None
         self._setup_controlled_joints()
-        self.n_controlled_dofs = len(self._controlled_dof_indices)
+        self.servo_joints = ServoJoints(entity, [joint.name for joint in self._controlled_joints])
+        self.n_controlled_dofs = len(self.servo_joints.joint_names)
 
     @torch.no_grad()
     def configure_post_build(self, environment_count: int) -> None:
@@ -104,10 +106,10 @@ class Robot(KinematicRobot):
             self._entity.set_links_inertia(nominal_inertia * scale[..., None, None], links_idx_local=link_indices)
 
         if configuration.armature_scale_range is not None:
-            nominal_armature = self._entity.get_dofs_armature(self._controlled_dof_indices)
+            nominal_armature = self._entity.get_dofs_armature(self.servo_joints.motor_dof_indices)
             scale = nominal_armature.new_empty((environment_count, self.n_controlled_dofs))
             scale.uniform_(*configuration.armature_scale_range)
-            self._entity.set_dofs_armature(nominal_armature * scale, self._controlled_dof_indices)
+            self._entity.set_dofs_armature(nominal_armature * scale, self.servo_joints.motor_dof_indices)
 
     def configure_delays(self, environment_count: int) -> None:
         self._command_delay_buffer = None
@@ -150,14 +152,10 @@ class Robot(KinematicRobot):
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
-        self._controlled_dof_indices = [
-            degree_of_freedom_index for joint in self._controlled_joints for degree_of_freedom_index in joint.dofs_idx_local
-        ]
-
     def configure_control_mode(self) -> None:
         match self._control_mode:
             case BamControlMode() as configuration:
-                joint_positions = self._entity.get_dofs_position(self._controlled_dof_indices)
+                joint_positions = self.servo_joints.get_motor_positions()
                 self._input_voltage = joint_positions.new_full((*joint_positions.shape[:-1], 1), configuration.input_voltage)
                 self._input_voltage_drop_resistance = configuration.input_voltage_drop_resistance
                 if configuration.input_voltage_drop_resistance_range is not None:
@@ -166,7 +164,7 @@ class Robot(KinematicRobot):
                 self._randomize_actuator_parameters()
                 self._bam = Bam(
                     entity=self._entity,
-                    controlled_dofs_indices=self._controlled_dof_indices,
+                    servo_joints=self.servo_joints,
                     input_voltage=self._input_voltage,
                     input_voltage_drop_resistance=self._input_voltage_drop_resistance,
                     minimum_input_voltage=configuration.minimum_input_voltage,
@@ -201,15 +199,15 @@ class Robot(KinematicRobot):
                         force_lower_bounds.append(force_lower_bound)
                         force_upper_bounds.append(force_upper_bound)
 
-                self._entity.set_dofs_kp(position_gain_values, self._controlled_dof_indices)
-                self._entity.set_dofs_kv(velocity_gain_values, self._controlled_dof_indices)
-                self._entity.set_dofs_armature(armature_values, self._controlled_dof_indices)
-                self._entity.set_dofs_force_range(force_lower_bounds, force_upper_bounds, self._controlled_dof_indices)
+                self._entity.set_dofs_kp(position_gain_values, self.servo_joints.motor_dof_indices)
+                self._entity.set_dofs_kv(velocity_gain_values, self.servo_joints.motor_dof_indices)
+                self._entity.set_dofs_armature(armature_values, self.servo_joints.motor_dof_indices)
+                self._entity.set_dofs_force_range(force_lower_bounds, force_upper_bounds, self.servo_joints.motor_dof_indices)
             case _:
                 raise ValueError(f"Unsupported control mode: {self._control_mode}")
 
-        position_gains = self._entity.get_dofs_kp(self._controlled_dof_indices)
-        force_lower_bounds, force_upper_bounds = self._entity.get_dofs_force_range(self._controlled_dof_indices)
+        position_gains = self._entity.get_dofs_kp(self.servo_joints.motor_dof_indices)
+        force_lower_bounds, force_upper_bounds = self._entity.get_dofs_force_range(self.servo_joints.motor_dof_indices)
         # Controller settings are shared across environments at configuration time.
         if position_gains.ndim > 1:
             position_gains = position_gains[0]
@@ -236,8 +234,13 @@ class Robot(KinematicRobot):
     def default_joint_positions(self) -> torch.Tensor:
         return self._default_joint_positions
 
+    @property
+    def default_encoder_positions(self) -> torch.Tensor:
+        """Observation reference in servo order, including per-environment control offsets."""
+        return self._default_encoder_positions
+
     def get_joint_dof_limits(self) -> tuple[torch.Tensor, torch.Tensor]:
-        lower_bounds, upper_bounds = self._entity.get_dofs_limit(self._controlled_dof_indices)
+        lower_bounds, upper_bounds = self._entity.get_dofs_limit(self.servo_joints.motor_dof_indices)
         if lower_bounds.ndim > 1:  # if batch_dofs_info=True, bound tensors are (n_envs, n_dofs)
             lower_bounds = lower_bounds[0]
             upper_bounds = upper_bounds[0]
@@ -247,7 +250,10 @@ class Robot(KinematicRobot):
         self._default_pose = default_pose.detach().clone()
         self.set_generalized_positions(self._default_pose, zero_velocity=True)
 
-        controlled_positions = self._entity.get_dofs_position(dofs_idx_local=self._controlled_dof_indices)
+        encoder_positions = self.servo_joints.get_encoder_positions()
+        controlled_positions = (
+            encoder_positions if isinstance(self._control_mode, BamControlMode) else self.servo_joints.get_motor_positions()
+        )
         if controlled_positions.ndim > 1:
             controlled_positions = controlled_positions[0]
         self._default_control_positions = controlled_positions.detach().clone()
@@ -258,8 +264,9 @@ class Robot(KinematicRobot):
         if configuration is not None and configuration.default_joint_position_offset_range is not None:
             joint_position_offsets.uniform_(*configuration.default_joint_position_offset_range)
         self._default_joint_positions = joint_positions + joint_position_offsets
-        controlled_joint_indices = [index - self.n_root_dofs for index in self._controlled_dof_indices]
+        controlled_joint_indices = self.servo_joints.motor_dof_indices - self.n_root_dofs
         self._control_position_offsets = joint_position_offsets[..., controlled_joint_indices]
+        self._default_encoder_positions = encoder_positions + self._control_position_offsets
 
         lower_bounds, upper_bounds = self.get_joint_dof_limits()
         self._control_lower_bounds, self._control_upper_bounds = scale_joint_position_limits(
@@ -269,7 +276,7 @@ class Robot(KinematicRobot):
 
     def get_control_forces(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
         return self._entity.get_dofs_control_force(
-            self._controlled_dof_indices,
+            self.servo_joints.motor_dof_indices,
             envs_idx=environment_indices,
         )
 
@@ -291,7 +298,7 @@ class Robot(KinematicRobot):
             )
 
         if self._command_delay_buffer is None and isinstance(self._control_mode, PositionControlMode):
-            self._entity.control_dofs_position(self._control_targets, self._controlled_dof_indices)
+            self._entity.control_dofs_position(self._control_targets, self.servo_joints.motor_dof_indices)
 
     @torch.no_grad()
     def update_actuator(self) -> None:
@@ -303,9 +310,9 @@ class Robot(KinematicRobot):
 
         if self._bam is not None:
             motor_torque = self._bam.step(current_control)
-            self._entity.control_dofs_force(motor_torque, self._controlled_dof_indices)
+            self._entity.control_dofs_force(motor_torque, self.servo_joints.motor_dof_indices)
         elif self._command_delay_buffer is not None:
-            self._entity.control_dofs_position(current_control, self._controlled_dof_indices)
+            self._entity.control_dofs_position(current_control, self.servo_joints.motor_dof_indices)
 
     @torch.no_grad()
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:

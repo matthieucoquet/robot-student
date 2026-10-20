@@ -63,7 +63,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             device=engine.device,
             imu_link_name=imu_link_name,
             key_link_names=key_link_names,
-            default_joint_positions=initial_joint_positions,
+            default_encoder_positions=initial_joint_positions,
             height_range=(0.06, 0.2),
             target_height=0.11,
             target_speed=0.4,
@@ -72,8 +72,8 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             facing_direction_weight=0.05,
             control_cost_weight=0.1,
             pose_cost_weight=0.05,
-            joint_dof_positions_sensor=Sensor(bias_half_width=0.015, noise_half_width=0.001),  # Radians.
-            joint_dof_velocities_sensor=Sensor(noise_half_width=0.25, delay_control_steps_range=(1, 1)),  # Radians per second.
+            encoder_positions_sensor=Sensor(bias_half_width=0.015, noise_half_width=0.001),  # Radians.
+            encoder_velocities_sensor=Sensor(noise_half_width=0.25, delay_control_steps_range=(1, 1)),  # Radians per second.
             imu_sensor=IMUSensor(
                 mounting_error_max_angle=math.radians(6.0),
                 angular_velocity_noise_half_width=0.03,  # Radians per second in the IMU frame.
