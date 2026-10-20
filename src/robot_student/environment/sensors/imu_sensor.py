@@ -1,5 +1,3 @@
-import math
-
 import torch
 from genesis.utils.geom import axis_angle_to_quat, inv_quat, transform_by_quat, transform_quat_by_quat
 
