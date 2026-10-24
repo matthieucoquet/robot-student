@@ -3,10 +3,9 @@ from pathlib import Path
 import genesis as gs
 import torch
 
-from robot_student.engine.control_mode import ControlMode
+from robot_student.engine.control_mode import BamControlMode, ControlMode
 from robot_student.engine.kinematic_robot import KinematicRobot
-from robot_student.engine.robot import DomainRandomizationConfiguration, Robot
-from robot_student.engine.robot_state import NoiseConfiguration
+from robot_student.engine.robot import CommandDelayConfiguration, DomainRandomizationConfiguration, Robot
 
 
 class _MjcfCompatibleKinematicOptions(gs.options.KinematicOptions):
@@ -57,19 +56,25 @@ class GenesisEngine:
         xml_path: Path,
         control_mode: ControlMode,
         *,
-        noise_configuration: NoiseConfiguration | None = None,
         domain_randomization_configuration: DomainRandomizationConfiguration | None = None,
+        command_delay_configuration: CommandDelayConfiguration | None = None,
     ) -> Robot:
         morph = gs.morphs.MJCF(file=str(xml_path))
-        if domain_randomization_configuration is not None and domain_randomization_configuration.center_of_mass is not None:
-            self._scene.options.rigid.batch_links_info = True
-            morph.align = False
+        if isinstance(control_mode, BamControlMode):
+            self._scene.options.rigid.batch_dofs_info = True
+        if domain_randomization_configuration is not None:
+            if domain_randomization_configuration.armature_scale_range is not None:
+                self._scene.options.rigid.batch_dofs_info = True
+            if domain_randomization_configuration.center_of_mass is not None or domain_randomization_configuration.mass_inertia is not None:
+                self._scene.options.rigid.batch_links_info = True
+            if domain_randomization_configuration.center_of_mass is not None:
+                morph.align = False
         entity = self._scene.add_entity(morph)
         robot = Robot(
             entity,
             control_mode=control_mode,
-            noise_configuration=noise_configuration,
             domain_randomization_configuration=domain_randomization_configuration,
+            command_delay_configuration=command_delay_configuration,
         )
         self.robots.append(robot)
 
@@ -149,10 +154,11 @@ class GenesisEngine:
     def build_scene(self, env_spacing: tuple[float, float] = (1.0, 1.0)) -> None:
         self._scene.build(n_envs=self.environment_count, env_spacing=env_spacing)
         for robot in self.robots:
-            robot.configure_control_mode()
-            robot.configure_domain_randomization(self.environment_count)
+            robot.configure_post_build(self.environment_count)
 
     def step(self) -> None:
+        for robot in self.robots:
+            robot.update_actuator()
         self._scene.step()
 
     def follow_robot(self, robot: KinematicRobot, smoothing: float | None = 0.05) -> None:
@@ -167,6 +173,8 @@ class GenesisEngine:
 
     def reset(self, environment_indices: torch.Tensor | None = None) -> None:
         self._scene.reset(envs_idx=environment_indices)
+        for robot in self.robots:
+            robot.reset(environment_indices)
 
     def reset_recording_camera(self, environment_indices: torch.Tensor | None = None) -> None:
         if self._recording_camera is None or self._recording_entity is None:

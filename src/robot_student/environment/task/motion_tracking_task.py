@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +26,7 @@ class MotionTrackingTask(Task):
         self,
         xml_path: Path,
         motion_library: MotionLibrary,
+        key_link_names: Sequence[str] = (),
         show_reference_motion: bool = False,
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
         soft_joint_position_limit_factor: float | None = None,
@@ -34,6 +36,7 @@ class MotionTrackingTask(Task):
         self._xml_path = xml_path
         self._motion_library = motion_library
         self._reference_motion_offset = reference_motion_offset
+        self._key_link_names = key_link_names
         self._show_reference_motion = show_reference_motion
         self._soft_joint_position_limit_factor = soft_joint_position_limit_factor
         self._reset_perturbation_configuration = reset_perturbation_configuration
@@ -66,18 +69,24 @@ class MotionTrackingTask(Task):
         self,
         *,
         robot: Robot,
-        key_link_indices: torch.Tensor,
         simulation_steps_per_control_step: int,
-        global_observation: bool,
     ) -> None:
         self._robot = robot
-        self._key_link_indices = key_link_indices
+        self._key_link_indices = torch.tensor(
+            self._robot.get_link_indices(self._key_link_names),
+            dtype=torch.int64,
+            device=robot.default_control.device,
+        )
         self._simulation_steps_per_control_step = simulation_steps_per_control_step
-        self._global_observation = global_observation
         lower_bounds, upper_bounds = self._robot.get_joint_dof_limits()
         self._soft_joint_position_lower_bounds, self._soft_joint_position_upper_bounds = scale_joint_position_limits(
             lower_bounds, upper_bounds, self._soft_joint_position_limit_factor
         )
+        self._state = self._robot.get_state()
+
+    @torch.no_grad()
+    def measure_state(self) -> None:
+        self._state = self._robot.get_state()
 
     def reset(self, environment_indices: torch.Tensor) -> None:
         reference_state = self._reference_robot.reset(environment_indices=environment_indices)
@@ -85,6 +94,9 @@ class MotionTrackingTask(Task):
         self._robot.set_state(reset_state, environment_indices=environment_indices)
         self._reference_state.copy_environments_(environment_indices, reference_state)
         self._motion_finished.index_fill_(0, environment_indices, False)
+
+        state = self._robot.get_state(environment_indices=environment_indices)
+        self._state.copy_environments_(environment_indices, state)
 
     def _apply_reset_perturbations(self, reference_state: RobotState) -> GeneralizedRobotState:
         configuration = self._reset_perturbation_configuration

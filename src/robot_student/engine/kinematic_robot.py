@@ -43,6 +43,14 @@ class KinematicRobot:
         dofs_velocity = self._entity.get_dofs_velocity(envs_idx=environment_indices)
         return dofs_velocity[..., self.n_root_dofs :]
 
+    def get_generalized_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        """Read root position/quaternion and joint coordinates in simulator order."""
+        return self._entity.get_qpos(envs_idx=environment_indices)
+
+    def get_generalized_velocities(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
+        """Read DOF velocities; free-root linear velocity is world-frame, angular velocity root-local."""
+        return self._entity.get_dofs_velocity(envs_idx=environment_indices)
+
     def get_state(self, environment_indices: torch.Tensor | None = None) -> RobotState:
         generalized_positions = self._entity.get_qpos(envs_idx=environment_indices)
         generalized_velocities = self._entity.get_dofs_velocity(envs_idx=environment_indices)
@@ -64,14 +72,29 @@ class KinematicRobot:
         self,
         environment_indices: torch.Tensor | None = None,
         relative: bool = False,
+        *,
+        link_indices: Sequence[int] | torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self._entity.get_links_pos(
+            links_idx_local=link_indices,
             envs_idx=environment_indices,
             relative=relative,
         )
 
-    def get_links_rotation(self, environment_indices: torch.Tensor | None = None, relative: bool = False) -> torch.Tensor:
-        return self._entity.get_links_quat(envs_idx=environment_indices, relative=relative)
+    def get_links_rotation(
+        self,
+        environment_indices: torch.Tensor | None = None,
+        relative: bool = False,
+        *,
+        link_indices: Sequence[int] | torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        return self._entity.get_links_quat(links_idx_local=link_indices, envs_idx=environment_indices, relative=relative)
+
+    def get_links_angular_velocity(
+        self, environment_indices: torch.Tensor | None = None, *, link_indices: Sequence[int] | torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Read world-frame angular velocities for selected links."""
+        return self._entity.get_links_ang(links_idx_local=link_indices, envs_idx=environment_indices)
 
     def set_generalized_positions(
         self,

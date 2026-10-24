@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from robot_student.algorithm import PPOFactory
+from robot_student.model import Policy, PolicyConfiguration
 from robot_student.util.logging import configure_logging
 from robot_student.util.seed import set_seed
 from robot_student.util.storage import MetricCheckpointStorage, RunContext, managed_storage
@@ -33,7 +33,7 @@ class Evaluation:
     seed: int
     use_cuda: bool
     environment_factory: EnvironmentFactory
-    learner_factory: PPOFactory
+    policy_configuration: PolicyConfiguration
     debug_level: int = logging.DEBUG
     run_storage: MetricCheckpointStorage
     recording: RecordingConfiguration | None = None
@@ -62,7 +62,11 @@ class Evaluation:
             )
 
         self._environment = self.environment_factory.create_environment(engine=self._engine)
-        self._learner = self.learner_factory.create(environment=self._environment)
+        self._policy = Policy(
+            self._environment.schema,
+            configuration=self.policy_configuration,
+            device=self._environment.device,
+        )
 
         context = RunContext(
             experiment_name=self.experiment_name,
@@ -82,9 +86,8 @@ class Evaluation:
 
         with managed_storage(self.run_storage):
             checkpoint = self.run_storage.load(iteration=-1, device=self._environment.device)
-            policy_state = checkpoint.get("policy")
-            policy = self._learner.policy
-            policy.load_state_dict(policy_state)
+            policy = self._policy
+            policy.load_state_dict(checkpoint["policy"])
             policy.eval()
 
             observation = self._environment.reset()

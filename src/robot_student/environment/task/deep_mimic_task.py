@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
@@ -8,8 +7,7 @@ from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_qu
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
-from robot_student.environment.task.observation import proprioception_observation, proprioception_schema
-from robot_student.environment.task.task import TaskFeedback
+from robot_student.environment.task.task import TaskEvaluation
 from robot_student.motion import MotionLibrary
 from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
 
@@ -22,6 +20,7 @@ class DeepMimicTask(MotionTrackingTask):
         motion_library: MotionLibrary,
         target_steps: Sequence[float],
         joint_reward_weight: Sequence[float],
+        key_link_names: Sequence[str] = (),
         show_reference_motion: bool = False,
         reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
         reset_perturbation_configuration: ResetPerturbationConfiguration | None = None,
@@ -29,15 +28,17 @@ class DeepMimicTask(MotionTrackingTask):
         super().__init__(
             xml_path=xml_path,
             motion_library=motion_library,
+            key_link_names=key_link_names,
             show_reference_motion=show_reference_motion,
             reference_motion_offset=reference_motion_offset,
             reset_perturbation_configuration=reset_perturbation_configuration,
         )
 
+        self._global_observation = True
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
 
-    def get_schema(self, *, noisy_observation_enabled: bool) -> dict[str, TensorSchema]:
+    def get_schema(self) -> dict[str, TensorSchema]:
         key_link_position_size = 3 * self._key_link_indices.numel()
         target_step_size = 3 + 6 + self._robot.n_joint_dofs + key_link_position_size
         target_size = self._target_steps.numel() * target_step_size
@@ -47,10 +48,15 @@ class DeepMimicTask(MotionTrackingTask):
                 shape=(target_size,),
                 data_type=torch.float32,
             ),
-            "proprioception": proprioception_schema(self._robot.n_joint_dofs, self._key_link_indices.numel()),
+            "proprioception": TensorSchema(
+                shape=(13 + 2 * self._robot.n_joint_dofs + key_link_position_size,),
+                data_type=torch.float32,
+            ),
         }
 
-    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Build shared clean features from the task-local physical state."""
+        robot_state = self._state
         targets = self._reference_robot.get_target_states(self._simulation_steps_per_control_step, self._target_steps)
 
         key_link_positions = targets.world_link_positions.index_select(-2, self._key_link_indices)
@@ -80,10 +86,40 @@ class DeepMimicTask(MotionTrackingTask):
         target = torch.cat(target_components, dim=-1).flatten(start_dim=-2)
         return {
             "target": target,
-            "proprioception": proprioception_observation(
-                robot_state, key_link_indices=self._key_link_indices, global_observation=self._global_observation
-            ),
+            "proprioception": self._proprioception_observation(robot_state),
         }
+
+    def _proprioception_observation(self, state: RobotState) -> torch.Tensor:
+        root_position = state.root_position
+        root_rotation = state.root_rotation
+        root_velocity = state.root_velocity
+        root_angular_velocity = state.root_angular_velocity
+
+        key_link_positions = state.world_link_positions.index_select(-2, self._key_link_indices)
+        relative_key_link_positions = key_link_positions - root_position.unsqueeze(-2)
+
+        root_height = root_position[..., 2:3]
+        if self._global_observation:
+            root_rotation = quat_to_rot6d(root_rotation)
+        else:
+            inverse_heading = inverse_heading_rotation(root_rotation)
+            relative_key_link_positions = transform_by_quat(relative_key_link_positions, inverse_heading.unsqueeze(-2))
+            local_root_rotation = transform_quat_by_quat(root_rotation, inverse_heading)
+            root_rotation = quat_to_rot6d(local_root_rotation)
+            root_velocity = transform_by_quat(root_velocity, inverse_heading)
+            root_angular_velocity = transform_by_quat(root_angular_velocity, inverse_heading)
+
+        proprioception_components = [
+            root_height,
+            root_rotation,
+            root_velocity,
+            root_angular_velocity,
+            state.joint_dof_positions,  # TODO: mimickit use 6D for each joint, relative to the rest/initial pose
+            state.joint_dof_velocities,
+            relative_key_link_positions.flatten(start_dim=-2),
+        ]
+        proprioception = torch.cat(proprioception_components, dim=-1)
+        return proprioception
 
     def _compute_reward(
         self,
@@ -133,11 +169,17 @@ class DeepMimicTask(MotionTrackingTask):
         terminal.logical_or_(self._motion_finished)
         return terminal
 
-    def compute_feedback(self, state: RobotState, **kwargs: Any) -> TaskFeedback:
+    def evaluate_step(
+        self,
+        *,
+        current_action: torch.Tensor,
+        previous_action: torch.Tensor,
+    ) -> TaskEvaluation:
+        state = self._state
         reward, reward_components = self._compute_reward(state, self._reference_state)
         pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward = reward_components
         terminal = self._compute_terminal(state, self._reference_state)
-        return TaskFeedback(
+        return TaskEvaluation(
             reward=reward,
             terminal=terminal,
             transition_metrics={

@@ -1,18 +1,17 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import torch
 
 from robot_student.engine.robot import Robot
-from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine
 
 
-class TaskFeedback(NamedTuple):
+class TaskEvaluation(NamedTuple):
     reward: torch.Tensor
     terminal: torch.Tensor
     transition_metrics: Mapping[str, torch.Tensor]
@@ -32,28 +31,32 @@ class Task(ABC):
         self,
         *,
         robot: Robot,
-        key_link_indices: torch.Tensor,
         simulation_steps_per_control_step: int,
-        global_observation: bool,
     ) -> None:
-        """Initialize after scene construction with the robot, read-only key link indices, and timing and observation settings."""
+        """Initialize after scene construction with the robot."""
 
     @abstractmethod
-    def reset(self, environment_indices: torch.Tensor) -> None:
-        """Reset the task, change the scene if necessary. for this task"""
+    def reset(self, environment_indices: torch.Tensor | None = None) -> None:
+        """Reset selected environments and seed their observations and histories without advancing sensor time.
+
+        Install any task-specific reset pose before capturing the initial readings. None selects all environments.
+        """
 
     def step(self, is_control_step: bool) -> None:
         """Advance task state before a simulation step; is_control_step marks the first step of a control interval."""
         return None
 
     @abstractmethod
-    def compute_feedback(self, state: RobotState, **kwargs: Any) -> TaskFeedback:
-        """Compute reward, termination, and metrics from the robot state and task-specific inputs."""
+    def measure_state(self) -> None:
+        """Capture the full batch once after each control interval, before evaluation and observation construction.
+
+        This is the only control-step hook that samples measurements and advances sensor histories.
+        """
 
     @abstractmethod
-    def observation(self, robot_state: RobotState, *, noisy_state: RobotState, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Return observations matching get_schema.
+    def evaluate_step(self, *, current_action: torch.Tensor, previous_action: torch.Tensor) -> TaskEvaluation:
+        """Compute reward, termination, and metrics from cached observations without sampling or advancing sensor histories."""
 
-        noisy_state equals the clean state when noise is disabled. Both states are read-only.
-        previous_action is a read-only buffer; clone it if returning it directly.
-        """
+    @abstractmethod
+    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Build features matching get_schema from cached observations without sampling or advancing sensor histories."""

@@ -113,7 +113,7 @@ class PPO:
         }
 
     @torch.no_grad()
-    def _collect_rollouts(self) -> None:
+    def _collect_rollouts(self) -> dict[str, torch.Tensor]:
         self._rollout_buffer.reset()
         for _ in range(self._rollout_buffer.rollout_length):
             action, log_probability = self._policy.sample_action_with_log_prob(self._observations)
