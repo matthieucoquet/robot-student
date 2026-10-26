@@ -172,7 +172,7 @@ class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
             return super().load(iteration, device=device)
         except FileNotFoundError:
             artifact_name = f"checkpoint-{self.training_id}"
-            artifact_alias = "latest" if iteration == -1 else f"iteration-{iteration}"
+            artifact_alias = "latest" if iteration == -1 else f"v{iteration}"
             artifact = self._run.use_artifact(f"{artifact_name}:{artifact_alias}")
 
             checkpoint_directory = Path(artifact.download(root=self._checkpoint_directory))

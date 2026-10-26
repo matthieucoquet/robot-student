@@ -53,6 +53,6 @@ def get_ppo_factory(
             value_epoch_count=2,
             value_batch_size=2,
             rollout_length=32,
-            entropy_coefficient=0.005,
+            entropy_coefficient=0.0,
         )
     )

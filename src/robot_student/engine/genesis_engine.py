@@ -156,9 +156,11 @@ class GenesisEngine:
         for robot in self.robots:
             robot.configure_post_build(self.environment_count)
 
-    def step(self) -> None:
+    def update_actuators(self) -> None:
         for robot in self.robots:
             robot.update_actuator()
+
+    def step(self) -> None:
         self._scene.step()
 
     def follow_robot(self, robot: KinematicRobot, smoothing: float | None = 0.05) -> None:

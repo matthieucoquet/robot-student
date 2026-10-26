@@ -133,6 +133,7 @@ class RobotEnvironment(Environment):
         self._robot.apply_control(current_action)
 
         for i in range(self._simulation_steps_per_control_step):
+            self._engine.update_actuators()
             self._task.step(is_control_step=i == 0)
             self._engine.step()
 

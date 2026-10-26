@@ -26,12 +26,18 @@ class SimulatorObservation(TensorClass["autocast"]):
 
 
 class RunInDirectionTask(Task):
-    """Walking observations and pose costs use servo encoder coordinates, including gear play."""
+    """Walking observations and pose costs use servo encoder coordinates, including gear play.
+
+    Pose costs average squared errors scaled by joint weights; unspecified joints use 1.0.
+    Termination checks the configured link's world height; the height reward uses the root.
+    Action smoothing penalizes the mean squared change in targets normalized by the robot's control action scale.
+    """
 
     def __init__(
         self,
         *,
         imu_link_name: str,
+        termination_height_link_name: str,
         default_encoder_positions: Sequence[float],
         device: torch.device,
         key_link_names: Sequence[str] = (),
@@ -43,7 +49,9 @@ class RunInDirectionTask(Task):
         facing_direction_weight: float = 0.5,
         control_cost_weight: float = 0.5,
         pose_cost_weight: float = 0.1,
-        height_range: tuple[float, float] = (0.2, 1.0),
+        pose_joint_weights: dict[str, float] | None = None,
+        action_smoothing_cost_weight: float = 0.0,
+        termination_height_range: tuple[float, float] = (0.2, 1.0),
         encoder_positions_sensor: Sensor | None = None,
         encoder_velocities_sensor: Sensor | None = None,
         imu_sensor: IMUSensor | None = None,
@@ -51,6 +59,11 @@ class RunInDirectionTask(Task):
         direction_norm = math.hypot(*direction)
         if not math.isclose(direction_norm, 1.0, rel_tol=1e-6, abs_tol=1e-6):
             raise ValueError(f"direction must be normalized, got norm {direction_norm}")
+
+        self._pose_joint_weights_by_name = dict(pose_joint_weights or {})
+        for joint_name, weight in self._pose_joint_weights_by_name.items():
+            if not math.isfinite(weight) or weight < 0.0:
+                raise ValueError(f"pose_joint_weights[{joint_name!r}] must be finite and nonnegative, got {weight}")
 
         self._encoder_positions_sensor = encoder_positions_sensor or Sensor()
         self._encoder_velocities_sensor = encoder_velocities_sensor or Sensor()
@@ -61,6 +74,7 @@ class RunInDirectionTask(Task):
             and self._imu_sensor.is_passthrough
         )
         self._imu_link_name = imu_link_name
+        self._termination_height_link_name = termination_height_link_name
         self._key_link_names = key_link_names
         self._world_gravity = torch.tensor((0.0, 0.0, -1.0), device=device, dtype=torch.float32)
         self._direction = torch.tensor(direction, device=device, dtype=torch.float32)
@@ -72,8 +86,9 @@ class RunInDirectionTask(Task):
         self._facing_direction_weight = facing_direction_weight
         self._control_cost_weight = control_cost_weight
         self._pose_cost_weight = pose_cost_weight
+        self._action_smoothing_cost_weight = action_smoothing_cost_weight
         self._default_encoder_positions = torch.tensor(default_encoder_positions, device=device, dtype=torch.float32)
-        self._minimum_healthy_height, self._maximum_healthy_height = height_range
+        self._minimum_healthy_height, self._maximum_healthy_height = termination_height_range
 
     def get_schema(self) -> dict[str, TensorSchema]:
         joint_count = self._robot.n_controlled_dofs
@@ -101,10 +116,19 @@ class RunInDirectionTask(Task):
         self._robot = robot
         if self._default_encoder_positions.shape != (robot.n_controlled_dofs,):
             raise ValueError("default_encoder_positions must contain one value per servo in control order")
+        joint_names = robot.servo_joints.joint_names
+        unknown_joint_names = self._pose_joint_weights_by_name.keys() - set(joint_names)
+        if unknown_joint_names:
+            raise ValueError(f"pose_joint_weights contains unknown servo joints: {', '.join(sorted(unknown_joint_names))}")
+        self._pose_joint_weights = self._default_encoder_positions.new_tensor(
+            [self._pose_joint_weights_by_name.get(joint_name, 1.0) for joint_name in joint_names]
+        )
         key_link_indices = robot.get_link_indices(self._key_link_names)
         self._imu_link_index = robot.get_link_indices((self._imu_link_name,))[0]
-        self._capture_link_indices = tuple(dict.fromkeys((*key_link_indices, self._imu_link_index)))
+        termination_height_link_index = robot.get_link_indices((self._termination_height_link_name,))[0]
+        self._capture_link_indices = tuple(dict.fromkeys((*key_link_indices, self._imu_link_index, termination_height_link_index)))
         self._imu_capture_link_index = self._capture_link_indices.index(self._imu_link_index)
+        self._termination_capture_link_index = self._capture_link_indices.index(termination_height_link_index)
         self._key_link_indices = torch.tensor(
             [self._capture_link_indices.index(index) for index in key_link_indices],
             dtype=torch.int64,
@@ -207,15 +231,17 @@ class RunInDirectionTask(Task):
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
     ) -> TaskEvaluation:
+        """Report raw reward terms and signed, weighted contributions under task/reward_contribution/."""
         simulator_observation = self._simulator_observation
         root_height = simulator_observation.root_position[..., 2]
-        root_height_is_healthy = root_height >= self._minimum_healthy_height
-        root_height_is_healthy.logical_and_(root_height <= self._maximum_healthy_height)
-        terminal = ~root_height_is_healthy
+        termination_height = simulator_observation.world_link_positions[..., self._termination_capture_link_index, 2]
+        termination_height_is_healthy = termination_height >= self._minimum_healthy_height
+        termination_height_is_healthy.logical_and_(termination_height <= self._maximum_healthy_height)
+        terminal = ~termination_height_is_healthy
 
         planar_velocity = simulator_observation.root_velocity[..., :2]
         target_velocity_error = torch.linalg.vector_norm(planar_velocity - self._target_velocity, dim=-1)
-        target_velocity_reward = target_velocity_error.mul(10.0).neg_().exp_()
+        target_velocity_reward = target_velocity_error.mul(12.0).neg_().exp_()
 
         target_height_error = root_height - self._target_height
         target_height_reward = target_height_error.clamp(max=0.0).abs_().mul_(25.0).neg_().exp_()
@@ -223,8 +249,12 @@ class RunInDirectionTask(Task):
         facing_direction_reward = torch.cos(heading_angle(simulator_observation.root_rotation) - self._direction_heading)
 
         control_cost = torch.mean(self._normalized_control_forces.square(), dim=-1)
-        pose_cost = torch.mean((simulator_observation.encoder_positions - self._default_encoder_positions).square(), dim=-1)
-        stay_alive_reward = root_height_is_healthy * 0.05
+        pose_cost = torch.mean(
+            (simulator_observation.encoder_positions - self._default_encoder_positions).square().mul_(self._pose_joint_weights), dim=-1
+        )
+        action_change = (current_action - previous_action) / self._robot.control_action_scale
+        action_smoothing_cost = torch.mean(action_change.square(), dim=-1)
+        stay_alive_reward = termination_height_is_healthy * 0.05
         reward = (
             stay_alive_reward
             + self._target_speed_weight * target_velocity_reward
@@ -232,7 +262,16 @@ class RunInDirectionTask(Task):
             + self._facing_direction_weight * facing_direction_reward
             - self._control_cost_weight * control_cost
             - self._pose_cost_weight * pose_cost
+            - self._action_smoothing_cost_weight * action_smoothing_cost
         )
+
+        stay_alive_reward_mean = stay_alive_reward.mean()
+        target_velocity_reward_mean = target_velocity_reward.mean()
+        target_height_reward_mean = target_height_reward.mean()
+        facing_direction_reward_mean = facing_direction_reward.mean()
+        control_cost_mean = control_cost.mean()
+        pose_cost_mean = pose_cost.mean()
+        action_smoothing_cost_mean = action_smoothing_cost.mean()
 
         return TaskEvaluation(
             reward=reward,
@@ -240,9 +279,15 @@ class RunInDirectionTask(Task):
             transition_metrics={
                 "task/target_velocity_error_mean": target_velocity_error.mean(),
                 "task/target_height_error_mean": target_height_error.abs().mean(),
-                "task/facing_direction_reward_mean": facing_direction_reward.mean(),
+                "task/stay_alive_reward_mean": stay_alive_reward_mean,
+                "task/target_velocity_reward_mean": target_velocity_reward_mean,
+                "task/target_height_reward_mean": target_height_reward_mean,
+                "task/facing_direction_reward_mean": facing_direction_reward_mean,
                 "task/root_height_mean": root_height.mean(),
-                "task/control_cost_mean": control_cost.mean(),
-                "task/pose_cost_mean": pose_cost.mean(),
+                "task/termination_height_mean": termination_height.mean(),
+                "task/control_cost_mean": control_cost_mean,
+                "task/pose_cost_mean": pose_cost_mean,
+                "task/action_smoothing_cost_mean": action_smoothing_cost_mean,
+                "task/reward_mean": reward.mean(),
             },
         )
