@@ -24,6 +24,7 @@ class GenesisEngine:
         seed: int | None = None,
         simulation_frequency: int = 120,
         environment_count: int = 1,
+        viewer_camera_position: tuple[float, float, float] | None = None,
     ) -> None:
         super().__init__()
 
@@ -39,6 +40,7 @@ class GenesisEngine:
         self._scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=self.time_step),
             kinematic_options=_MjcfCompatibleKinematicOptions(),
+            viewer_options=None if viewer_camera_position is None else gs.options.ViewerOptions(camera_pos=viewer_camera_position),
             show_viewer=show_viewer,
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
         )
@@ -77,14 +79,6 @@ class GenesisEngine:
             command_delay_configuration=command_delay_configuration,
         )
         self.robots.append(robot)
-
-        if self._recording_camera is not None:
-            self._recording_entity = entity
-            self._recording_camera.follow_entity(entity, smoothing=0.2, fix_orientation=False)
-            self._recording_offset = torch.as_tensor(self._recording_position, dtype=gs.tc_float, device=gs.device) - torch.as_tensor(
-                entity.base_link.desc.pos, dtype=gs.tc_float, device=gs.device
-            )
-
         return robot
 
     def add_kinematic_robot(
@@ -168,6 +162,17 @@ class GenesisEngine:
         if viewer is None:
             raise RuntimeError("Cannot follow a robot without an active viewer")
         viewer.follow_entity(robot._entity, smoothing=smoothing, fix_orientation=False)
+
+    def follow_robot_for_recording(self, robot: Robot | KinematicRobot, smoothing: float | None = 0.2) -> None:
+        """Select the recording subject and preserve its camera offset across resets."""
+        if self._recording_camera is None:
+            return
+        entity = robot._entity
+        self._recording_entity = entity
+        self._recording_camera.follow_entity(entity, smoothing=smoothing, fix_orientation=False)
+        self._recording_offset = torch.as_tensor(self._recording_position, dtype=gs.tc_float, device=gs.device) - torch.as_tensor(
+            entity.base_link.desc.pos, dtype=gs.tc_float, device=gs.device
+        )
 
     def is_viewer_alive(self) -> bool:
         viewer = self._scene.viewer

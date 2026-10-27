@@ -51,6 +51,7 @@ class RobotEnvironment(Environment):
             domain_randomization_configuration=domain_randomization_configuration,
             command_delay_configuration=command_delay_configuration,
         )
+        engine.follow_robot_for_recording(self._robot)
 
         device = engine.device
         self._task.setup_scene(engine)

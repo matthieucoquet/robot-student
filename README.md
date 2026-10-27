@@ -10,6 +10,13 @@ Install the dependencies with uv:
 uv sync
 ```
 
+To install the optional GMR motion-retargeting dependency from its submodule:
+
+```sh
+git submodule update --init external/GMR
+uv sync --extra gmr
+```
+
 ## Weights & Biases
 
 When using Weights & Biases for the metrics storage, first provide `WANDB_API_KEY` through the environment variables, then login to W&B:
