@@ -30,7 +30,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
             device=engine.device,
             imu_link_name="pelvis",
             termination_height_link_name="pelvis",
-            default_encoder_positions=initial_joint_positions,
+            default_servo_encoder_positions=initial_joint_positions,
             termination_height_range=(0.5, 1.5),
             target_height=0.7,
             target_speed=1.1,
@@ -181,8 +181,8 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
         sensor_configuration = BeyondMimicSensorConfiguration(
             root_velocity=SensorConfiguration(noise_half_width=0.5),
             root_angular_velocity=SensorConfiguration(noise_half_width=0.2),
-            joint_dof_positions=SensorConfiguration(noise_half_width=0.01),
-            joint_dof_velocities=SensorConfiguration(noise_half_width=0.5),
+            servo_encoder_positions=SensorConfiguration(noise_half_width=0.01),
+            servo_encoder_velocities=SensorConfiguration(noise_half_width=0.5),
             anchor_position=SensorConfiguration(noise_half_width=0.25),
             anchor_rotation=SensorConfiguration(noise_half_width=0.05),
         )

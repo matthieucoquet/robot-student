@@ -19,8 +19,8 @@ from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d,
 class BeyondMimicSensors:
     root_velocity: Sensor
     root_angular_velocity: Sensor
-    joint_dof_positions: Sensor
-    joint_dof_velocities: Sensor
+    servo_encoder_positions: Sensor
+    servo_encoder_velocities: Sensor
     anchor_position: Sensor
     anchor_rotation: RotationSensor
 
@@ -29,8 +29,8 @@ class BeyondMimicSensors:
 class BeyondMimicSensorConfiguration:
     root_velocity: SensorConfiguration = field(default_factory=SensorConfiguration)
     root_angular_velocity: SensorConfiguration = field(default_factory=SensorConfiguration)
-    joint_dof_positions: SensorConfiguration = field(default_factory=SensorConfiguration)
-    joint_dof_velocities: SensorConfiguration = field(default_factory=SensorConfiguration)
+    servo_encoder_positions: SensorConfiguration = field(default_factory=SensorConfiguration)
+    servo_encoder_velocities: SensorConfiguration = field(default_factory=SensorConfiguration)
     anchor_position: SensorConfiguration = field(default_factory=SensorConfiguration)
     anchor_rotation: SensorConfiguration = field(default_factory=SensorConfiguration)
 
@@ -39,8 +39,8 @@ class BeyondMimicSensorConfiguration:
         return BeyondMimicSensors(
             root_velocity=self.root_velocity.create_sensor(Sensor),
             root_angular_velocity=self.root_angular_velocity.create_sensor(Sensor),
-            joint_dof_positions=self.joint_dof_positions.create_sensor(Sensor),
-            joint_dof_velocities=self.joint_dof_velocities.create_sensor(Sensor),
+            servo_encoder_positions=self.servo_encoder_positions.create_sensor(Sensor),
+            servo_encoder_velocities=self.servo_encoder_velocities.create_sensor(Sensor),
             anchor_position=self.anchor_position.create_sensor(Sensor),
             anchor_rotation=self.anchor_rotation.create_sensor(RotationSensor),
         )
@@ -49,6 +49,8 @@ class BeyondMimicSensorConfiguration:
 # Differences from upstream BeyondMimic: motion completion ends the episode;
 # observation noise perturbs measurements before feature construction, rather than observation terms directly.
 class BeyondMimicTask(MotionTrackingTask):
+    """Track reference body motion with servo encoder observations and physical joint-limit costs."""
+
     def __init__(
         self,
         xml_path: Path,
@@ -67,6 +69,9 @@ class BeyondMimicTask(MotionTrackingTask):
         contact_force_threshold: float = 1.0,
         reset_perturbation_configuration: ResetPerturbationConfiguration | None = None,
         sensor_configuration: BeyondMimicSensorConfiguration | None = None,
+        tracking_position_tolerance: float = 0.3,
+        tracking_linear_velocity_tolerance: float = 1.0,
+        tracking_height_threshold: float = 0.25,
     ) -> None:
         super().__init__(
             xml_path=xml_path,
@@ -80,6 +85,9 @@ class BeyondMimicTask(MotionTrackingTask):
         self._anchor_link_name = anchor_link_name
         self._end_effector_link_names = end_effector_link_names
         self._contact_force_threshold = contact_force_threshold
+        self._tracking_position_variance = tracking_position_tolerance**2
+        self._tracking_linear_velocity_variance = tracking_linear_velocity_tolerance**2
+        self._tracking_height_threshold = tracking_height_threshold
         self._sensors = (sensor_configuration or BeyondMimicSensorConfiguration()).create_sensors()
 
     def initialize(
@@ -100,6 +108,8 @@ class BeyondMimicTask(MotionTrackingTask):
             dtype=torch.int64,
             device=self._key_link_indices.device,
         )
+        self._servo_encoder_positions = self._robot.servo_joints.get_encoder_positions()
+        self._servo_encoder_velocities = self._robot.servo_joints.get_encoder_velocities()
         for sensor, value in self._sensor_values():
             sensor.initialize(value)
 
@@ -108,8 +118,8 @@ class BeyondMimicTask(MotionTrackingTask):
         return (
             (self._sensors.root_velocity, state.root_velocity),
             (self._sensors.root_angular_velocity, state.root_angular_velocity),
-            (self._sensors.joint_dof_positions, state.joint_dof_positions),
-            (self._sensors.joint_dof_velocities, state.joint_dof_velocities),
+            (self._sensors.servo_encoder_positions, self._servo_encoder_positions),
+            (self._sensors.servo_encoder_velocities, self._servo_encoder_velocities),
             (self._sensors.anchor_position, state.world_link_positions[..., self._anchor_link_index, :]),
             (self._sensors.anchor_rotation, state.world_link_rotations[..., self._anchor_link_index, :]),
         )
@@ -117,26 +127,34 @@ class BeyondMimicTask(MotionTrackingTask):
     @torch.no_grad()
     def reset(self, environment_indices: torch.Tensor) -> None:
         super().reset(environment_indices)
+        self._servo_encoder_positions.index_copy_(
+            0, environment_indices, self._robot.servo_joints.get_encoder_positions(environment_indices)
+        )
+        self._servo_encoder_velocities.index_copy_(
+            0, environment_indices, self._robot.servo_joints.get_encoder_velocities(environment_indices)
+        )
         for sensor, value in self._sensor_values():
             sensor.reset(value, environment_indices)
 
     @torch.no_grad()
     def measure_state(self) -> None:
         super().measure_state()
+        self._servo_encoder_positions = self._robot.servo_joints.get_encoder_positions()
+        self._servo_encoder_velocities = self._robot.servo_joints.get_encoder_velocities()
         for sensor, value in self._sensor_values():
             sensor.update(value)
 
     def get_schema(self) -> dict[str, TensorSchema]:
-        joint_count = self._robot.n_joint_dofs
+        joint_count = self._robot.n_controlled_dofs
         link_count = self._key_link_indices.numel()
 
-        motion_phase_size = 2 * joint_count
+        motion_command_size = 2 * joint_count
         anchor_error_size = 9
         root_velocity_size = 6
         joint_size = 2 * joint_count
         link_size = 9 * link_count
         previous_action_size = self._robot.n_controlled_dofs
-        actor_size = motion_phase_size + anchor_error_size + root_velocity_size + joint_size + previous_action_size
+        actor_size = motion_command_size + anchor_error_size + root_velocity_size + joint_size + previous_action_size
         critic_size = actor_size + link_size
 
         sizes = {
@@ -147,8 +165,13 @@ class BeyondMimicTask(MotionTrackingTask):
 
     def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
         state = self._state
+        # Reference backlash positions and velocities are zero, so motor values are the desired encoder readings.
+        servo_joints = self._robot.servo_joints
         motion_command = torch.cat(
-            (self._reference_state.joint_dof_positions, self._reference_state.joint_dof_velocities),
+            (
+                servo_joints.select_motor_joint_values(self._reference_state.joint_dof_positions),
+                servo_joints.select_motor_joint_values(self._reference_state.joint_dof_velocities),
+            ),
             dim=-1,
         )
 
@@ -157,8 +180,8 @@ class BeyondMimicTask(MotionTrackingTask):
             inverse_anchor_rotation=inv_quat(self._sensors.anchor_rotation.observation),
             root_velocity=self._sensors.root_velocity.observation,
             root_angular_velocity=self._sensors.root_angular_velocity.observation,
-            joint_dof_positions=self._sensors.joint_dof_positions.observation,
-            joint_dof_velocities=self._sensors.joint_dof_velocities.observation,
+            servo_encoder_positions=self._sensors.servo_encoder_positions.observation,
+            servo_encoder_velocities=self._sensors.servo_encoder_velocities.observation,
         )
 
         anchor_position = state.world_link_positions[..., self._anchor_link_index, :]
@@ -168,8 +191,8 @@ class BeyondMimicTask(MotionTrackingTask):
             inverse_anchor_rotation=inverse_anchor_rotation,
             root_velocity=state.root_velocity,
             root_angular_velocity=state.root_angular_velocity,
-            joint_dof_positions=state.joint_dof_positions,
-            joint_dof_velocities=state.joint_dof_velocities,
+            servo_encoder_positions=self._servo_encoder_positions,
+            servo_encoder_velocities=self._servo_encoder_velocities,
         )
 
         world_link_positions = state.world_link_positions.index_select(-2, self._key_link_indices)
@@ -193,8 +216,8 @@ class BeyondMimicTask(MotionTrackingTask):
         inverse_anchor_rotation: torch.Tensor,
         root_velocity: torch.Tensor,
         root_angular_velocity: torch.Tensor,
-        joint_dof_positions: torch.Tensor,
-        joint_dof_velocities: torch.Tensor,
+        servo_encoder_positions: torch.Tensor,
+        servo_encoder_velocities: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
         """Build shared actor and critic features from sensor readings or clean state values."""
         reference_anchor_position = self._reference_state.world_link_positions[..., self._anchor_link_index, :]
@@ -203,15 +226,15 @@ class BeyondMimicTask(MotionTrackingTask):
         anchor_rotation_error = quat_to_rot6d(transform_quat_by_quat(reference_anchor_rotation, inverse_anchor_rotation))
         root_linear_velocities = inv_transform_by_quat(root_velocity, self._state.root_rotation)
         root_angular_velocities = inv_transform_by_quat(root_angular_velocity, self._state.root_rotation)
-        joint_positions = joint_dof_positions - self._robot.default_joint_positions
+        servo_encoder_position_offsets = servo_encoder_positions - self._robot.default_encoder_positions
 
         return (
             anchor_position_error,
             anchor_rotation_error,
             root_linear_velocities,
             root_angular_velocities,
-            joint_positions,
-            joint_dof_velocities,
+            servo_encoder_position_offsets,
+            servo_encoder_velocities,
         )
 
     def _compute_reward(
@@ -229,7 +252,7 @@ class BeyondMimicTask(MotionTrackingTask):
         reference_anchor_rotation = reference.world_link_rotations[..., self._anchor_link_index, :]
 
         anchor_position_error = (anchor_position - reference_anchor_position).square().sum(dim=-1)
-        anchor_position_reward = torch.exp(-anchor_position_error / 0.3**2)
+        anchor_position_reward = torch.exp(-anchor_position_error / self._tracking_position_variance)
 
         anchor_rotation_difference = transform_quat_by_quat(inv_quat(reference_anchor_rotation), anchor_rotation)
         anchor_rotation_error = quat_to_rotation_vector(anchor_rotation_difference).square().sum(dim=-1)
@@ -246,7 +269,7 @@ class BeyondMimicTask(MotionTrackingTask):
             world_reference_link_positions - reference_anchor_position.unsqueeze(-2), alignment_rotation
         )
         body_position_error = (world_link_positions - aligned_reference_link_positions).square().sum(dim=-1).mean(dim=-1)
-        body_position_reward = torch.exp(-body_position_error / 0.3**2)
+        body_position_reward = torch.exp(-body_position_error / self._tracking_position_variance)
 
         world_link_rotations = state.world_link_rotations.index_select(-2, self._key_link_indices)
         world_reference_link_rotations = reference.world_link_rotations.index_select(-2, self._key_link_indices)
@@ -260,7 +283,7 @@ class BeyondMimicTask(MotionTrackingTask):
         body_linear_velocity_error = (
             (world_link_linear_velocities - world_reference_link_linear_velocities).square().sum(dim=-1).mean(dim=-1)
         )
-        body_linear_velocity_reward = torch.exp(-body_linear_velocity_error / 1.0**2)
+        body_linear_velocity_reward = torch.exp(-body_linear_velocity_error / self._tracking_linear_velocity_variance)
 
         world_link_angular_velocities = state.world_link_angular_velocities.index_select(-2, self._key_link_indices)
         world_reference_link_angular_velocities = reference.world_link_angular_velocities.index_select(-2, self._key_link_indices)
@@ -323,7 +346,11 @@ class BeyondMimicTask(MotionTrackingTask):
         reference_anchor_gravity_z = 2.0 * reference_anchor_rotation[..., 1:3].square().sum(dim=-1) - 1.0
         anchor_tilt_error = (anchor_gravity_z - reference_anchor_gravity_z).abs()
 
-        return (anchor_height_error > 0.25) | (end_effector_height_errors > 0.25).any(dim=-1) | (anchor_tilt_error > 0.8)
+        return (
+            (anchor_height_error > self._tracking_height_threshold)
+            | (end_effector_height_errors > self._tracking_height_threshold).any(dim=-1)
+            | (anchor_tilt_error > 0.8)
+        )
 
     def evaluate_step(
         self,

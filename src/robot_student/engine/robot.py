@@ -240,11 +240,12 @@ class Robot(KinematicRobot):
         return self._default_encoder_positions
 
     def get_joint_dof_limits(self) -> tuple[torch.Tensor, torch.Tensor]:
-        lower_bounds, upper_bounds = self._entity.get_dofs_limit(self.servo_joints.motor_dof_indices)
+        """Position bounds for every non-root DOF, including passive joints, in state order."""
+        lower_bounds, upper_bounds = self._entity.get_dofs_limit()
         if lower_bounds.ndim > 1:  # if batch_dofs_info=True, bound tensors are (n_envs, n_dofs)
             lower_bounds = lower_bounds[0]
             upper_bounds = upper_bounds[0]
-        return lower_bounds, upper_bounds
+        return lower_bounds[self.n_root_dofs :], upper_bounds[self.n_root_dofs :]
 
     def set_default_pose(self, default_pose: torch.Tensor) -> None:
         self._default_pose = default_pose.detach().clone()
@@ -270,7 +271,7 @@ class Robot(KinematicRobot):
 
         lower_bounds, upper_bounds = self.get_joint_dof_limits()
         self._control_lower_bounds, self._control_upper_bounds = scale_joint_position_limits(
-            lower_bounds, upper_bounds, self._control_mode.action_limit_scale
+            lower_bounds[controlled_joint_indices], upper_bounds[controlled_joint_indices], self._control_mode.action_limit_scale
         )
         self._control_targets = self._default_pose.new_empty((*self._default_pose.shape[:-1], self.n_controlled_dofs))
 

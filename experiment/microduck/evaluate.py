@@ -1,15 +1,20 @@
 import logging
 
+from robot_student.motion import ReferenceSampling
 from robot_student.run import Evaluation, RecordingConfiguration
 from robot_student.util import WeightsAndBiasesStorage
 
-from .environment.environment import PPOEnvironmentFactory
+from .environment.environment import BeyondMimicEnvironmentFactory
 from .learner import get_ppo_factory
 
 if __name__ == "__main__":
-    environment = PPOEnvironmentFactory(
+    environment = BeyondMimicEnvironmentFactory(
         headless=False,
         environment_count=1,
+        reference_sampling=ReferenceSampling.ZERO,
+        show_reference_motion=True,
+        reference_motion_offset=(0.0, 0.3, 0.0),
+        enable_randomization=True,
     )
     learner_configuration = get_ppo_factory(
         actor_observation_keys=("actor",),
@@ -21,9 +26,9 @@ if __name__ == "__main__":
     recording_configuration = RecordingConfiguration(position=(-1.0, 1.5, 1.5), resolution=(1920, 1080), environment_index=0)
 
     evaluation = Evaluation(
-        experiment_name="md_walking",
+        experiment_name="microduck_beyondmimic",
         run_name="eval",
-        run_id="239eb724afbd0c85",
+        run_id="74e80983466685fe",
         seed=0,
         use_cuda=False,
         debug_level=logging.INFO,

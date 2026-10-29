@@ -1,3 +1,4 @@
+from dataclasses import replace
 from functools import partial
 
 from torch.optim import Adam
@@ -54,5 +55,29 @@ def get_ppo_factory(
             value_batch_size=2,
             rollout_length=32,
             entropy_coefficient=0.0,
+        )
+    )
+
+
+def get_beyond_mimic_ppo_factory(*, compile_models: bool = False) -> PPOFactory:
+    configuration = get_ppo_factory(
+        actor_observation_keys=("actor",),
+        critic_observation_keys=("critic",),
+        compile_models=compile_models,
+    ).configuration
+    # Use G1's BeyondMimic action parameterization with Microduck's BAM effort scale and smaller MLPs.
+    return PPOFactory(
+        configuration=replace(
+            configuration,
+            policy=replace(
+                configuration.policy,
+                action_bound_enforcement=ActionBoundEnforcement.NONE,
+                position_target_mode=PositionTargetMode.EFFORT_SCALED_ACTION,
+                standard_deviation=1.0,
+                learn_standard_deviation=True,
+            ),
+            policy_optimizer=partial(Adam, lr=3e-5),
+            value_function_optimizer=partial(Adam, lr=3e-5),
+            entropy_coefficient=0.005,
         )
     )
