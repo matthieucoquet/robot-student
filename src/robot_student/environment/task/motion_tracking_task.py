@@ -22,6 +22,8 @@ class ResetPerturbationConfiguration:
 
 
 class MotionTrackingTask(Task):
+    """Manage reference motion and robot resets; concrete tasks own live simulator measurements."""
+
     def __init__(
         self,
         xml_path: Path,
@@ -82,11 +84,6 @@ class MotionTrackingTask(Task):
         self._soft_joint_position_lower_bounds, self._soft_joint_position_upper_bounds = scale_joint_position_limits(
             lower_bounds, upper_bounds, self._soft_joint_position_limit_factor
         )
-        self._state = self._robot.get_state()
-
-    @torch.no_grad()
-    def measure_state(self) -> None:
-        self._state = self._robot.get_state()
 
     def reset(self, environment_indices: torch.Tensor) -> None:
         reference_state = self._reference_robot.reset(environment_indices=environment_indices)
@@ -94,9 +91,6 @@ class MotionTrackingTask(Task):
         self._robot.set_state(reset_state, environment_indices=environment_indices)
         self._reference_state.copy_environments_(environment_indices, reference_state)
         self._motion_finished.index_fill_(0, environment_indices, False)
-
-        state = self._robot.get_state(environment_indices=environment_indices)
-        self._state.copy_environments_(environment_indices, state)
 
     def _apply_reset_perturbations(self, reference_state: RobotState) -> GeneralizedRobotState:
         configuration = self._reset_perturbation_configuration

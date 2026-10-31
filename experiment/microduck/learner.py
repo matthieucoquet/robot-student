@@ -61,8 +61,30 @@ def get_ppo_factory(
 
 def get_beyond_mimic_ppo_factory(*, compile_models: bool = False) -> PPOFactory:
     configuration = get_ppo_factory(
-        actor_observation_keys=("actor",),
-        critic_observation_keys=("critic",),
+        actor_observation_keys=(
+            "motion_command",
+            "measured_anchor_position_error",
+            "measured_anchor_rotation_error",
+            "measured_root_linear_velocity",
+            "measured_imu_angular_velocity",
+            "measured_projected_gravity",
+            "measured_servo_encoder_position_offsets",
+            "measured_servo_encoder_velocities",
+            "previous_action",
+        ),
+        critic_observation_keys=(
+            "motion_command",
+            "simulated_anchor_position_error",
+            "simulated_anchor_rotation_error",
+            "simulated_root_linear_velocity",
+            "simulated_imu_angular_velocity",
+            "simulated_projected_gravity",
+            "simulated_servo_encoder_position_offsets",
+            "simulated_servo_encoder_velocities",
+            "simulated_link_positions",
+            "simulated_link_rotations",
+            "previous_action",
+        ),
         compile_models=compile_models,
     ).configuration
     # Use G1's BeyondMimic action parameterization with Microduck's BAM effort scale and smaller MLPs.

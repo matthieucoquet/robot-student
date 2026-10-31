@@ -6,8 +6,8 @@ from robot_student.engine.robot import CenterOfMassRandomization, DomainRandomiz
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.robot_environment import PushConfiguration
-from robot_student.environment.sensors import SensorConfiguration
-from robot_student.environment.task.beyond_mimic_task import BeyondMimicSensorConfiguration, BeyondMimicTask
+from robot_student.environment.sensors import IMUSensor, RotationSensor, Sensor
+from robot_student.environment.task.beyond_mimic_task import BeyondMimicSensors, BeyondMimicTask
 from robot_student.environment.task.deep_mimic_task import DeepMimicTask
 from robot_student.environment.task.motion_tracking_task import ResetPerturbationConfiguration
 from robot_student.motion import MotionLibrary, ReferenceSampling
@@ -178,13 +178,13 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             "right_wrist_yaw_link",
         )
 
-        sensor_configuration = BeyondMimicSensorConfiguration(
-            root_velocity=SensorConfiguration(noise_half_width=0.5),
-            root_angular_velocity=SensorConfiguration(noise_half_width=0.2),
-            servo_encoder_positions=SensorConfiguration(noise_half_width=0.01),
-            servo_encoder_velocities=SensorConfiguration(noise_half_width=0.5),
-            anchor_position=SensorConfiguration(noise_half_width=0.25),
-            anchor_rotation=SensorConfiguration(noise_half_width=0.05),
+        sensors = BeyondMimicSensors(
+            root_velocity=Sensor(noise_half_width=0.5),
+            imu=IMUSensor(angular_velocity_noise_half_width=0.2),
+            servo_encoder_positions=Sensor(noise_half_width=0.01),
+            servo_encoder_velocities=Sensor(noise_half_width=0.5),
+            anchor_position=Sensor(noise_half_width=0.25),
+            anchor_rotation=RotationSensor(noise_half_width=0.05),
         )
 
         reset_perturbation_configuration = ResetPerturbationConfiguration(
@@ -218,7 +218,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             reset_perturbation_configuration=reset_perturbation_configuration if self.enable_randomization else None,
             anchor_link_name=anchor_link_name,
             key_link_names=key_link_names,
-            sensor_configuration=sensor_configuration if self.enable_randomization else None,
+            sensors=sensors if self.enable_randomization else None,
         )
 
         return RobotEnvironment(

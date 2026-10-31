@@ -5,7 +5,7 @@ from robot_student.run import Evaluation, RecordingConfiguration
 from robot_student.util import WeightsAndBiasesStorage
 
 from .environment.environment import BeyondMimicEnvironmentFactory
-from .learner import get_ppo_factory
+from .learner import get_beyond_mimic_ppo_factory
 
 if __name__ == "__main__":
     environment = BeyondMimicEnvironmentFactory(
@@ -16,10 +16,7 @@ if __name__ == "__main__":
         reference_motion_offset=(0.0, 0.3, 0.0),
         enable_randomization=True,
     )
-    learner_configuration = get_ppo_factory(
-        actor_observation_keys=("actor",),
-        critic_observation_keys=("critic",),
-    ).configuration
+    learner_configuration = get_beyond_mimic_ppo_factory().configuration
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 

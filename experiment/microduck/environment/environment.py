@@ -10,8 +10,8 @@ from robot_student.engine.robot import (
 from robot_student.environment import RobotEnvironment, RunInDirectionTask
 from robot_student.environment.environment import Environment
 from robot_student.environment.robot_environment import PushConfiguration
-from robot_student.environment.sensors import SensorConfiguration
-from robot_student.environment.task.beyond_mimic_task import BeyondMimicSensorConfiguration, BeyondMimicTask
+from robot_student.environment.sensors import IMUSensor, RotationSensor, Sensor
+from robot_student.environment.task.beyond_mimic_task import BeyondMimicSensors, BeyondMimicTask
 from robot_student.environment.task.motion_tracking_task import ResetPerturbationConfiguration
 from robot_student.motion import MotionLibrary, ReferenceSampling
 from robot_student.run.environment_factory import EnvironmentFactory
@@ -164,13 +164,13 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
         #     delay_physics_steps_range=(3, 6),  # 15–30 ms at 200 Hz.
         # )
 
-        sensor_configuration = BeyondMimicSensorConfiguration(
-            root_velocity=SensorConfiguration(noise_half_width=0.075),
-            root_angular_velocity=SensorConfiguration(noise_half_width=0.2),
-            servo_encoder_positions=SensorConfiguration(noise_half_width=0.01),
-            servo_encoder_velocities=SensorConfiguration(noise_half_width=0.5),
-            anchor_position=SensorConfiguration(noise_half_width=0.0375),
-            anchor_rotation=SensorConfiguration(noise_half_width=0.05),
+        sensors = BeyondMimicSensors(
+            root_velocity=Sensor(noise_half_width=0.075),
+            imu=IMUSensor(angular_velocity_noise_half_width=0.2),
+            servo_encoder_positions=Sensor(noise_half_width=0.01),
+            servo_encoder_velocities=Sensor(noise_half_width=0.5),
+            anchor_position=Sensor(noise_half_width=0.0375),
+            anchor_rotation=RotationSensor(noise_half_width=0.05),
         )
         reset_perturbation_configuration = ResetPerturbationConfiguration(
             root_position_half_width=(0.0075, 0.0075, 0.0015),
@@ -205,8 +205,6 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             mass_inertia=MassInertiaRandomization(link_names=("trunk_base",), scale_range=(0.95, 1.05)),
             armature_scale_range=(0.9, 1.1),
         )
-        # imu_link_name = "trunk_base"
-
         task = BeyondMimicTask(
             xml_path=mjcf_path,
             motion_library=motion_library,
@@ -219,7 +217,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             tracking_linear_velocity_tolerance=0.15,
             tracking_height_threshold=0.0375,
             reset_perturbation_configuration=reset_perturbation_configuration if self.enable_randomization else None,
-            sensor_configuration=sensor_configuration if self.enable_randomization else None,
+            sensors=sensors if self.enable_randomization else None,
         )
         return RobotEnvironment(
             engine,

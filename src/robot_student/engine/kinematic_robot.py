@@ -96,6 +96,12 @@ class KinematicRobot:
         """Read world-frame angular velocities for selected links."""
         return self._entity.get_links_ang(links_idx_local=link_indices, envs_idx=environment_indices)
 
+    def get_links_linear_velocity(
+        self, environment_indices: torch.Tensor | None = None, *, link_indices: Sequence[int] | torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Read world-frame linear velocities at the authored origins of selected links."""
+        return self._entity.get_links_vel(links_idx_local=link_indices, envs_idx=environment_indices)
+
     def set_generalized_positions(
         self,
         generalized_positions: torch.Tensor,
