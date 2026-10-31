@@ -9,23 +9,23 @@ from .learner import get_beyond_mimic_ppo_factory
 
 if __name__ == "__main__":
     environment = BeyondMimicEnvironmentFactory(
-        headless=False,
+        headless=True,
         environment_count=1,
         reference_sampling=ReferenceSampling.ZERO,
         show_reference_motion=True,
         reference_motion_offset=(0.0, 0.3, 0.0),
-        enable_randomization=True,
+        enable_randomization=False,
     )
     learner_configuration = get_beyond_mimic_ppo_factory().configuration
 
     weights_and_biases_storage = WeightsAndBiasesStorage()
 
-    recording_configuration = RecordingConfiguration(position=(-1.0, 1.5, 1.5), resolution=(1920, 1080), environment_index=0)
+    recording_configuration = RecordingConfiguration(position=(0.5, -0.5, 0.5), resolution=(1920, 1080), environment_index=0)
 
     evaluation = Evaluation(
         experiment_name="microduck_beyondmimic",
         run_name="eval",
-        run_id="74e80983466685fe",
+        run_id="6d8f6c52f5ea1993",
         seed=0,
         use_cuda=False,
         debug_level=logging.INFO,

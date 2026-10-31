@@ -17,7 +17,7 @@ if __name__ == "__main__":
             headless=True,
             reference_sampling=ReferenceSampling.ZERO,
             show_reference_motion=False,
-            enable_randomization=False,
+            enable_randomization=True,
         ),
         seed=0,
         maximum_steps=1_000,

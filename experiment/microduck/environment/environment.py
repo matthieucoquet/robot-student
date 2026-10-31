@@ -170,7 +170,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             imu=IMUSensor(mounting_error_max_angle=math.radians(6.0), angular_velocity_noise_half_width=0.2),
             servo_encoder_positions=Sensor(bias_half_width=0.015, noise_half_width=0.01),
             servo_encoder_velocities=Sensor(noise_half_width=0.5),
-            anchor_position=Sensor(noise_half_width=0.0375),
+            anchor_position=Sensor(noise_half_width=0.01),
             anchor_rotation=RotationSensor(noise_half_width=0.05),
         )
         reset_perturbation_configuration = ResetPerturbationConfiguration(
@@ -227,6 +227,7 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
             task=task,
             control_frequency=self.control_frequency,
             initial_pose=initial_pose,
+            ground_friction=0.5,
             domain_randomization_configuration=domain_randomization_configuration if self.enable_randomization else None,
             push_configuration=push_configuration if self.enable_randomization else None,
             command_delay_configuration=command_delay_configuration,
