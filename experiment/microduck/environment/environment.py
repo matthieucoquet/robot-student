@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -166,8 +167,8 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
 
         sensors = BeyondMimicSensors(
             root_velocity=Sensor(noise_half_width=0.075),
-            imu=IMUSensor(angular_velocity_noise_half_width=0.2),
-            servo_encoder_positions=Sensor(noise_half_width=0.01),
+            imu=IMUSensor(mounting_error_max_angle=math.radians(6.0), angular_velocity_noise_half_width=0.2),
+            servo_encoder_positions=Sensor(bias_half_width=0.015, noise_half_width=0.01),
             servo_encoder_velocities=Sensor(noise_half_width=0.5),
             anchor_position=Sensor(noise_half_width=0.0375),
             anchor_rotation=RotationSensor(noise_half_width=0.05),

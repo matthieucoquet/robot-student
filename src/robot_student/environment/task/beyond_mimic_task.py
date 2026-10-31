@@ -12,7 +12,7 @@ from robot_student.environment.sensors import IMUSensor, RotationSensor, Sensor
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
 from robot_student.environment.task.task import TaskEvaluation
 from robot_student.motion import MotionLibrary
-from robot_student.util.geometry import inverse_heading_rotation, quat_to_rot6d, quat_to_rotation_vector
+from robot_student.util.geometry import inverse_heading_rotation, quat_angular_displacement, quat_to_rot6d, quat_to_rotation_vector
 
 
 class SimulatorObservation(TensorClass["autocast"]):
@@ -232,9 +232,9 @@ class BeyondMimicTask(MotionTrackingTask):
             dim=-1,
         )
 
-        inverse_imu_rotation = inv_quat(simulator_observation.imu_rotation)
-        imu_angular_velocity = transform_by_quat(simulator_observation.imu_angular_velocity, inverse_imu_rotation)
-        projected_gravity = transform_by_quat(self._world_gravity, inverse_imu_rotation)
+        inverse_anchor_rotation = inv_quat(simulator_observation.imu_rotation)
+        imu_angular_velocity = transform_by_quat(simulator_observation.imu_angular_velocity, inverse_anchor_rotation)
+        projected_gravity = transform_by_quat(self._world_gravity, inverse_anchor_rotation)
         measured_imu_angular_velocity = imu_angular_velocity
         measured_projected_gravity = projected_gravity
         if not self._sensors.imu.is_passthrough:
@@ -254,7 +254,6 @@ class BeyondMimicTask(MotionTrackingTask):
         )
 
         anchor_position = simulator_observation.world_link_positions[..., self._anchor_link_index, :]
-        inverse_anchor_rotation = inv_quat(simulator_observation.world_link_rotations[..., self._anchor_link_index, :])
         simulated_components = self._observation_components(
             prefix="simulated",
             anchor_position=anchor_position,
@@ -320,7 +319,7 @@ class BeyondMimicTask(MotionTrackingTask):
         *,
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         simulator_observation = self._simulator_observation
         reference = self._reference_state
         anchor_position = simulator_observation.world_link_positions[..., self._anchor_link_index, :]
@@ -351,8 +350,8 @@ class BeyondMimicTask(MotionTrackingTask):
         world_link_rotations = simulator_observation.world_link_rotations.index_select(-2, self._key_link_indices)
         world_reference_link_rotations = reference.world_link_rotations.index_select(-2, self._key_link_indices)
         aligned_reference_link_rotations = transform_quat_by_quat(world_reference_link_rotations, alignment_rotation)
-        body_rotation_difference = transform_quat_by_quat(inv_quat(aligned_reference_link_rotations), world_link_rotations)
-        body_rotation_error = quat_to_rotation_vector(body_rotation_difference).square().sum(dim=-1).mean(dim=-1)
+        body_rotation_displacement = quat_angular_displacement(aligned_reference_link_rotations, world_link_rotations)
+        body_rotation_error = body_rotation_displacement.square().sum(dim=-1).mean(dim=-1)
         body_rotation_reward = torch.exp(-body_rotation_error / 0.4**2)
 
         world_link_linear_velocities = simulator_observation.world_link_linear_velocities.index_select(-2, self._key_link_indices)
@@ -394,17 +393,17 @@ class BeyondMimicTask(MotionTrackingTask):
             - 10.0 * joint_position_limit_penalty
             - 0.1 * undesired_contact_penalty
         )
-        reward_components = (
-            anchor_position_reward,
-            anchor_rotation_reward,
-            body_position_reward,
-            body_rotation_reward,
-            body_linear_velocity_reward,
-            body_angular_velocity_reward,
-            action_change_penalty,
-            joint_position_limit_penalty,
-            undesired_contact_penalty,
-        )
+        reward_components = {
+            "anchor_position_reward": anchor_position_reward,
+            "anchor_rotation_reward": anchor_rotation_reward,
+            "body_position_reward": body_position_reward,
+            "body_rotation_reward": body_rotation_reward,
+            "body_linear_velocity_reward": body_linear_velocity_reward,
+            "body_angular_velocity_reward": body_angular_velocity_reward,
+            "action_change_penalty": action_change_penalty,
+            "joint_position_limit_penalty": joint_position_limit_penalty,
+            "undesired_contact_penalty": undesired_contact_penalty,
+        }
         return reward, reward_components
 
     def _compute_terminal(self) -> torch.Tensor:
@@ -441,33 +440,11 @@ class BeyondMimicTask(MotionTrackingTask):
             current_action=current_action,
             previous_action=previous_action,
         )
-        (
-            anchor_position_reward,
-            anchor_rotation_reward,
-            body_position_reward,
-            body_rotation_reward,
-            body_linear_velocity_reward,
-            body_angular_velocity_reward,
-            action_change_penalty,
-            joint_position_limit_penalty,
-            undesired_contact_penalty,
-        ) = reward_components
-
         terminal = self._compute_terminal()
         self._reference_robot.record_failures(terminal)
         terminal = terminal | self._motion_finished
         return TaskEvaluation(
             reward=reward,
             terminal=terminal,
-            transition_metrics={
-                "task/anchor_position_reward_mean": anchor_position_reward.mean(),
-                "task/anchor_rotation_reward_mean": anchor_rotation_reward.mean(),
-                "task/body_position_reward_mean": body_position_reward.mean(),
-                "task/body_rotation_reward_mean": body_rotation_reward.mean(),
-                "task/body_linear_velocity_reward_mean": body_linear_velocity_reward.mean(),
-                "task/body_angular_velocity_reward_mean": body_angular_velocity_reward.mean(),
-                "task/action_change_penalty_mean": action_change_penalty.mean(),
-                "task/joint_position_limit_penalty_mean": joint_position_limit_penalty.mean(),
-                "task/undesired_contact_penalty_mean": undesired_contact_penalty.mean(),
-            },
+            transition_metrics={f"task/{name}_mean": component.mean() for name, component in reward_components.items()},
         )
