@@ -13,7 +13,7 @@ if __name__ == "__main__":
         environment_count=1,
         reference_sampling=ReferenceSampling.ZERO,
         show_reference_motion=True,
-        reference_motion_offset=(0.0, 0.3, 0.0),
+        reference_motion_offset=(0.0, 0.2, 0.0),
         enable_randomization=False,
     )
     learner_configuration = get_beyond_mimic_ppo_factory().configuration
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     evaluation = Evaluation(
         experiment_name="microduck_beyondmimic",
         run_name="eval",
-        run_id="6d8f6c52f5ea1993",
+        run_id="1b1a77f38c2cba59",
         seed=0,
         use_cuda=False,
         debug_level=logging.INFO,
