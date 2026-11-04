@@ -26,12 +26,13 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /workspace/robot-student
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+COPY external/GMR/ ./external/GMR/
+RUN uv sync --locked --no-dev --no-install-project --extra gmr
 
 COPY README.md ./
 COPY src/ ./src/
 COPY experiment/ ./experiment/
 
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-dev --extra gmr
 
 CMD ["uv", "run", "python", "-m", "experiment.g1.train_deepmimic"]
