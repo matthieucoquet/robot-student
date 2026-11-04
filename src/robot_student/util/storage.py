@@ -118,30 +118,33 @@ class TensorBoardMetricStorage(MetricStorage, LocalCheckpointStorage):
 class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
     def __init__(self) -> None:
         self._run: wandb.Run | None = None
+        self._api: wandb.Api | None = None
         self._checkpoint_directory: Path | None = None
 
     def initialize(self, context: RunContext) -> None:
-        if self._run is not None:
+        if self._run is not None or self._api is not None:
             return
         super().initialize(context)
+
+        self.training_id = context.run_id
+        if context.is_evaluation:
+            self._api = wandb.Api(overrides={"project": context.experiment_name})
+            return
 
         wandb_directory = context.run_directory / "wandb"
         wandb_directory.mkdir(parents=True, exist_ok=True)
 
-        self.training_id = context.run_id
-
         self._run = wandb.init(
             project=context.experiment_name,
             name=context.run_name,
-            id=None if context.is_evaluation else context.run_id,
+            id=context.run_id,
             dir=wandb_directory,
-            job_type="evaluation" if context.is_evaluation else "training",
+            job_type="training",
             mode="online",
             save_code=False,
         )
-        if not context.is_evaluation:
-            self._run.define_metric("iteration")
-            self._run.define_metric("*", step_metric="iteration")
+        self._run.define_metric("iteration")
+        self._run.define_metric("*", step_metric="iteration")
 
     def log(self, metrics: Mapping[str, StoredScalarMetric], iteration: int) -> None:
         logged_values = dict(metrics)
@@ -172,8 +175,9 @@ class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
             return super().load(iteration, device=device)
         except FileNotFoundError:
             artifact_name = f"checkpoint-{self.training_id}"
-            artifact_alias = "latest" if iteration == -1 else f"v{iteration}"
-            artifact = self._run.use_artifact(f"{artifact_name}:{artifact_alias}")
+            artifact_alias = "latest" if iteration == -1 else f"iteration-{iteration}"
+            artifact_path = f"{artifact_name}:{artifact_alias}"
+            artifact = self._api.artifact(artifact_path, type="model") if self._api is not None else self._run.use_artifact(artifact_path)
 
             checkpoint_directory = Path(artifact.download(root=self._checkpoint_directory))
             checkpoint_path = checkpoint_directory / "checkpoint.pt"
@@ -185,6 +189,7 @@ class WeightsAndBiasesStorage(MetricStorage, LocalCheckpointStorage):
         if self._run is not None:
             self._run.finish(exit_code=exit_code)
             self._run = None
+        self._api = None
 
 
 @contextmanager
