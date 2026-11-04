@@ -2,11 +2,13 @@ FROM python:3.13-slim-trixie
 
 # PyGEL loads libGL during import, including for headless training.
 # Triton and TorchInductor compile native code at runtime.
+# GMR's smplx dependency is installed from Git.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \        
         ca-certificates \
         curl \
+        git \
         libegl1 \
         libgl1 \
         libgl1-mesa-dri \
