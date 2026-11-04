@@ -18,7 +18,7 @@ def get_ppo_factory(
     policy = PolicyConfiguration(
         body_factory=partial(
             MLP,
-            hidden_layers=[512, 512],
+            hidden_layers=[1024, 1024],
             weight_initializer=OrthogonalInitializer(head_gain=0.01),
         ),
         observation_keys=actor_observation_keys,
@@ -32,7 +32,7 @@ def get_ppo_factory(
     value_function = ValueFunctionConfiguration(
         body_factory=partial(
             MLP,
-            hidden_layers=[512, 512],
+            hidden_layers=[1024, 1024],
             weight_initializer=OrthogonalInitializer(head_gain=1.0),
         ),
         observation_keys=critic_observation_keys,
@@ -49,9 +49,9 @@ def get_ppo_factory(
             policy_optimizer=policy_optimizer,
             value_function_optimizer=value_optimizer,
             compile_models=compile_models,
-            policy_epoch_count=2,
+            policy_epoch_count=3,
             policy_batch_size=2,
-            value_epoch_count=2,
+            value_epoch_count=3,
             value_batch_size=2,
             rollout_length=32,
             entropy_coefficient=0.0,

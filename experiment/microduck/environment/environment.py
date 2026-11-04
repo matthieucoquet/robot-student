@@ -138,7 +138,10 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
         control_mode.action_limit_scale = None
 
         experiment_path = Path(__file__).parent.parent
-        motion_path = experiment_path / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"
+        # motion_path = experiment_path / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"
+        # motion_path = experiment_path / "dataset" / "preprocessed" / "BM_Long_Jump_00001.pt"
+        motion_path = experiment_path / "dataset" / "preprocessed" / "BM_Stand_Up_00007.pt"
+
         if not motion_path.is_file():
             raise FileNotFoundError(f"Preprocessed motion not found: {motion_path}")
 

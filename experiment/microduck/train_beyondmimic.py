@@ -25,11 +25,11 @@ if __name__ == "__main__":
 
     training = Training(
         experiment_name="microduck_beyondmimic",
-        run_name="beyondmimic_walk",
+        run_name="beyondmimic_standup",
         seed=0,
         use_cuda=True,
         debug_level=logging.INFO,
-        iteration_count=12_000,
+        iteration_count=20_000,
         checkpoint_interval=500,
         metric_log_interval=50,
         environment_factory=environment,
