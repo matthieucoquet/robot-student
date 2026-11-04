@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_quat
 
+from robot_student.engine.robot import Robot
 from robot_student.engine.robot_state import RobotState
 from robot_student.environment.schema import TensorSchema
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
@@ -37,6 +38,25 @@ class DeepMimicTask(MotionTrackingTask):
         self._global_observation = True
         self._target_steps = torch.tensor(target_steps, dtype=torch.float32, device=device)
         self._joint_reward_weight = torch.tensor(joint_reward_weight, dtype=torch.float32, device=device)
+
+    def initialize(
+        self,
+        *,
+        robot: Robot,
+        simulation_steps_per_control_step: int,
+    ) -> None:
+        super().initialize(robot=robot, simulation_steps_per_control_step=simulation_steps_per_control_step)
+        self._state = self._robot.get_state()
+
+    @torch.no_grad()
+    def reset(self, environment_indices: torch.Tensor) -> None:
+        super().reset(environment_indices)
+        state = self._robot.get_state(environment_indices=environment_indices)
+        self._state.copy_environments_(environment_indices, state)
+
+    @torch.no_grad()
+    def measure_state(self) -> None:
+        self._state = self._robot.get_state()
 
     def get_schema(self) -> dict[str, TensorSchema]:
         key_link_position_size = 3 * self._key_link_indices.numel()
@@ -121,11 +141,9 @@ class DeepMimicTask(MotionTrackingTask):
         proprioception = torch.cat(proprioception_components, dim=-1)
         return proprioception
 
-    def _compute_reward(
-        self,
-        state: RobotState,
-        reference: RobotState,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+    def _compute_reward(self) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+        state = self._state
+        reference = self._reference_state
         position_difference = state.joint_dof_positions - reference.joint_dof_positions
         position_error = torch.sum(self._joint_reward_weight * position_difference.square(), dim=-1)
         pose_reward = torch.exp(-0.25 * position_error)
@@ -159,7 +177,9 @@ class DeepMimicTask(MotionTrackingTask):
         reward_components = (pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward)
         return reward, reward_components
 
-    def _compute_terminal(self, state: RobotState, reference: RobotState):
+    def _compute_terminal(self) -> torch.Tensor:
+        state = self._state
+        reference = self._reference_state
         link_differences = state.world_link_positions - reference.world_link_positions
         link_distances = torch.sum(link_differences.square(), dim=-1)
         link_distances = torch.max(link_distances, dim=-1)[0]
@@ -175,10 +195,9 @@ class DeepMimicTask(MotionTrackingTask):
         current_action: torch.Tensor,
         previous_action: torch.Tensor,
     ) -> TaskEvaluation:
-        state = self._state
-        reward, reward_components = self._compute_reward(state, self._reference_state)
+        reward, reward_components = self._compute_reward()
         pose_reward, velocity_reward, root_pose_reward, root_velocity_reward, key_position_reward = reward_components
-        terminal = self._compute_terminal(state, self._reference_state)
+        terminal = self._compute_terminal()
         return TaskEvaluation(
             reward=reward,
             terminal=terminal,

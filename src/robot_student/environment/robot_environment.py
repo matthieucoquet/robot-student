@@ -51,6 +51,7 @@ class RobotEnvironment(Environment):
             domain_randomization_configuration=domain_randomization_configuration,
             command_delay_configuration=command_delay_configuration,
         )
+        engine.follow_robot_for_recording(self._robot)
 
         device = engine.device
         self._task.setup_scene(engine)
@@ -133,6 +134,7 @@ class RobotEnvironment(Environment):
         self._robot.apply_control(current_action)
 
         for i in range(self._simulation_steps_per_control_step):
+            self._engine.update_actuators()
             self._task.step(is_control_step=i == 0)
             self._engine.step()
 

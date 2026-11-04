@@ -4,10 +4,17 @@ Really early PPO training experiments for robotic reinforcement learning in Gene
 
 ## Setup
 
-Install the dependencies with uv:
+Initialize the submodules, then install the dependencies with uv:
 
 ```sh
+git submodule update --init
 uv sync
+```
+
+To also install the optional GMR motion-retargeting dependency:
+
+```sh
+uv sync --extra gmr
 ```
 
 ## Weights & Biases

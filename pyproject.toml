@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gmr = [
+    "general-motion-retargeting",
+]
 huggingface = [
     "huggingface-hub>=1.27.0",
 ]
@@ -33,6 +36,9 @@ robot-student = "robot_student:main"
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+general-motion-retargeting = { path = "external/GMR", editable = true }
 
 [tool.ruff]
 line-length = 140

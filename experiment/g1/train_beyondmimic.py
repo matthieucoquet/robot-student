@@ -1,6 +1,7 @@
 import logging
 from dataclasses import replace
 
+from robot_student.environment.task.beyond_mimic_task import BeyondMimicTask
 from robot_student.motion import ReferenceSampling
 from robot_student.run import EvaluationConfiguration, Training
 from robot_student.util import WeightsAndBiasesStorage
@@ -24,8 +25,8 @@ if __name__ == "__main__":
     )
 
     learner = get_ppo_factory(
-        actor_observation_keys=["actor"],
-        critic_observation_keys=["critic"],
+        actor_observation_keys=BeyondMimicTask.actor_observation_keys,
+        critic_observation_keys=BeyondMimicTask.critic_observation_keys,
         compile_models=True,
     )
 

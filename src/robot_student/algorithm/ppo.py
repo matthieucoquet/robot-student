@@ -165,7 +165,7 @@ class PPO:
         advantages.clamp_(-self._advantage_clip, self._advantage_clip)
 
     def _update_value_function(self) -> dict[str, torch.Tensor]:
-        observations = self._rollout_buffer.flat_observations
+        observations = self._rollout_buffer.flat_observations.select(*self._value_function.observation_keys)
         returns = self._rollout_buffer.flat_returns
 
         log_loss_sum = torch.zeros((), device=returns.device)
@@ -185,7 +185,7 @@ class PPO:
         return {"train/value_loss": log_loss_sum / minibatch_count}
 
     def _update_policy(self) -> dict[str, torch.Tensor]:
-        observations = self._rollout_buffer.flat_observations
+        observations = self._rollout_buffer.flat_observations.select(*self._policy.observation_keys)
         actions = self._rollout_buffer.flat_actions
         old_log_probabilities = self._rollout_buffer.flat_log_probabilities
         advantages = self._rollout_buffer.flat_advantages

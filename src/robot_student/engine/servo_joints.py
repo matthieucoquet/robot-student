@@ -34,8 +34,14 @@ class ServoJoints:
                 backlash_servo_indices.append(servo_index)
 
         self.motor_dof_indices = torch.tensor(motor_dof_indices, dtype=torch.long, device=gs.device)
+        self._motor_joint_dof_indices = self.motor_dof_indices - entity.links[0].n_dofs
         self._backlash_dof_indices = torch.tensor(backlash_dof_indices, dtype=torch.long, device=gs.device)
         self._backlash_servo_indices = torch.tensor(backlash_servo_indices, dtype=torch.long, device=gs.device)
+
+    @torch.no_grad()
+    def select_motor_joint_values(self, joint_values: torch.Tensor) -> torch.Tensor:
+        """Select motor values in servo order from a non-root joint tensor without reading the simulator."""
+        return joint_values.index_select(-1, self._motor_joint_dof_indices)
 
     @torch.no_grad()
     def get_motor_positions(self, environment_indices: torch.Tensor | None = None) -> torch.Tensor:
