@@ -7,10 +7,10 @@ import torch
 from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
-from robot_student.environment.schema import EnvironmentSchema
 from robot_student.model.action import ActionBoundEnforcement, PositionTargetMode
 from robot_student.model.distribution import ActionDistribution
 from robot_student.model.normalizer import RunningNormalization
+from robot_student.schema import EnvironmentSchema
 
 BodyFactory = Callable[..., nn.Module]
 

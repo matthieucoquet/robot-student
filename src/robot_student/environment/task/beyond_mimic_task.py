@@ -7,11 +7,11 @@ from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_qua
 from tensordict import TensorClass
 
 from robot_student.engine.robot import Robot
-from robot_student.environment.schema import TensorSchema
 from robot_student.environment.sensors import IMUSensor, RotationSensor, Sensor
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
 from robot_student.environment.task.task import TaskEvaluation
 from robot_student.motion import MotionLibrary
+from robot_student.schema import TensorSchema
 from robot_student.util.geometry import inverse_heading_rotation, quat_angular_displacement, quat_to_rot6d, quat_to_rotation_vector
 
 

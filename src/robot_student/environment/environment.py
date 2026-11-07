@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import torch
 from tensordict import TensorDictBase
 
-from robot_student.environment.schema import EnvironmentSchema
+from robot_student.schema import EnvironmentSchema
 
 
 class Environment(ABC):

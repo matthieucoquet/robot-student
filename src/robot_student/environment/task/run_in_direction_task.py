@@ -6,9 +6,9 @@ from genesis.utils.geom import inv_quat, transform_by_quat, transform_quat_by_qu
 from tensordict import TensorClass
 
 from robot_student.engine.robot import Robot
-from robot_student.environment.schema import TensorSchema
 from robot_student.environment.sensors import IMUSensor, Sensor
 from robot_student.environment.task.task import Task, TaskEvaluation
+from robot_student.schema import TensorSchema
 from robot_student.util.geometry import heading_angle, quat_to_rot6d
 
 

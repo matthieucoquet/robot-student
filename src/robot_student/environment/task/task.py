@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import torch
 
 from robot_student.engine.robot import Robot
-from robot_student.environment.schema import TensorSchema
+from robot_student.schema import TensorSchema
 
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine

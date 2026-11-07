@@ -11,8 +11,8 @@ from tensordict import TensorDict, TensorDictBase
 from robot_student.engine.control_mode import ControlMode
 from robot_student.engine.robot import CommandDelayConfiguration, DomainRandomizationConfiguration
 from robot_student.environment.environment import Environment
-from robot_student.environment.schema import EnvironmentSchema, TensorSchema
 from robot_student.environment.task.task import Task
+from robot_student.schema import EnvironmentSchema, TensorSchema
 
 if TYPE_CHECKING:
     from robot_student.engine.genesis_engine import GenesisEngine

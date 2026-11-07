@@ -6,7 +6,7 @@ import torch
 from tensordict import TensorDict, TensorDictBase
 
 if TYPE_CHECKING:
-    from robot_student.environment.schema import EnvironmentSchema
+    from robot_student.schema import EnvironmentSchema
 
 
 class RolloutBuffer:
