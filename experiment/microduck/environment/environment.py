@@ -125,6 +125,7 @@ class PPOEnvironmentFactory(EnvironmentFactory):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class BeyondMimicEnvironmentFactory(EnvironmentFactory):
+    motion_path: Path
     reference_sampling: ReferenceSampling = ReferenceSampling.ADAPTIVE
     show_reference_motion: bool = False
     reference_motion_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -137,15 +138,10 @@ class BeyondMimicEnvironmentFactory(EnvironmentFactory):
         mjcf_path, control_mode, initial_pose, _ = microduck_configuration()
         control_mode.action_limit_scale = None
 
-        experiment_path = Path(__file__).parent.parent
-        # motion_path = experiment_path / "dataset" / "preprocessed" / "BG_Normal_Walking_00001.pt"
-        # motion_path = experiment_path / "dataset" / "preprocessed" / "BM_Long_Jump_00001.pt"
-        motion_path = experiment_path / "dataset" / "preprocessed" / "BM_Stand_Up_00007.pt"
+        if not self.motion_path.is_file():
+            raise FileNotFoundError(f"Preprocessed motion not found: {self.motion_path}")
 
-        if not motion_path.is_file():
-            raise FileNotFoundError(f"Preprocessed motion not found: {motion_path}")
-
-        motion_library = MotionLibrary([motion_path], device=engine.device, reference_sampling=self.reference_sampling)
+        motion_library = MotionLibrary([self.motion_path], device=engine.device, reference_sampling=self.reference_sampling)
 
         key_link_names = (
             "trunk_base",

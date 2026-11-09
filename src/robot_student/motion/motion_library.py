@@ -91,25 +91,33 @@ class MotionLibrary:
         sample_times = bin_start_times + torch.rand(count, device=bins.device, dtype=bin_start_times.dtype) * bin_durations
         return motion_indices, sample_times
 
-    def get_state(self, motion_indices: torch.Tensor, time: torch.Tensor) -> RobotState:
+    def _get_frame_interpolation(
+        self, motion_indices: torch.Tensor | int, time: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         durations = self.motion_durations[motion_indices]
         frame_counts = self.frame_counts[motion_indices]
-        phase = torch.clip(time / durations, 0.0, 1.0)
-
+        frame_position = (time / durations).clamp(0.0, 1.0) * (frame_counts - 1)
+        first_frame_id = frame_position.floor().long()
+        second_frame_id = (first_frame_id + 1).clamp(max=frame_counts - 1)
+        blend = (frame_position - first_frame_id).unsqueeze(-1)
         frame_start = self.frame_starts[motion_indices]
-        frame_position = phase * (frame_counts - 1)
-
-        first_frame_id = torch.floor(frame_position).to(torch.int64)
-        second_frame_id = torch.min(first_frame_id + 1, frame_counts - 1)
-        blend = frame_position - first_frame_id
-
         first_frame_id += frame_start
         second_frame_id += frame_start
+        return first_frame_id, second_frame_id, blend
 
+    def get_joint_state(self, motion_indices: torch.Tensor | int, time: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Interpolate joint DOF positions and velocities at times in seconds."""
+        first_frame_id, second_frame_id, blend = self._get_frame_interpolation(motion_indices, time)
+        return (
+            torch.lerp(self.frames.joint_dof_positions[first_frame_id], self.frames.joint_dof_positions[second_frame_id], blend),
+            torch.lerp(self.frames.joint_dof_velocities[first_frame_id], self.frames.joint_dof_velocities[second_frame_id], blend),
+        )
+
+    def get_state(self, motion_indices: torch.Tensor | int, time: torch.Tensor) -> RobotState:
+        first_frame_id, second_frame_id, blend = self._get_frame_interpolation(motion_indices, time)
         first_frame = self.frames[first_frame_id]
         second_frame = self.frames[second_frame_id]
 
-        blend = blend.unsqueeze(-1)
         link_blend = blend.unsqueeze(-2)
 
         return RobotState(

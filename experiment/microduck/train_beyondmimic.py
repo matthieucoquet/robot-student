@@ -1,5 +1,6 @@
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 from robot_student.motion import ReferenceSampling
 from robot_student.run import EvaluationConfiguration, Training
@@ -9,7 +10,11 @@ from .environment.environment import BeyondMimicEnvironmentFactory
 from .learner import get_beyond_mimic_ppo_factory
 
 if __name__ == "__main__":
-    environment = BeyondMimicEnvironmentFactory(headless=True, environment_count=2048)
+    environment = BeyondMimicEnvironmentFactory(
+        headless=True,
+        environment_count=2048,
+        motion_path=Path(__file__).parent / "dataset" / "preprocessed" / "BM_Long_Jump_00001.pt",
+    )
     evaluation = EvaluationConfiguration(
         environment_factory=replace(
             environment,

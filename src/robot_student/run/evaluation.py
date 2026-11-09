@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -12,6 +11,7 @@ from robot_student.util.seed import set_seed
 from robot_student.util.storage import MetricCheckpointStorage, RunContext, managed_storage
 
 from .environment_factory import EnvironmentFactory
+from .run_directory import find_run_directory
 
 ScalarMetric = int | float | torch.Tensor
 StoredScalarMetric = int | float
@@ -44,7 +44,7 @@ class Evaluation:
 
         self._engine = self.environment_factory.create_engine(use_cuda=self.use_cuda, seed=self.seed)
 
-        run_directory = self._find_directory()
+        run_directory = find_run_directory(experiment_name=self.experiment_name, run_name=self.run_name, run_id=self.run_id)
 
         if self.recording is not None:
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -103,14 +103,3 @@ class Evaluation:
                     observation = self._environment.reset_done(done)
             finally:
                 self._engine.stop_recording()
-
-    def _find_directory(self):
-        result_directory = Path.cwd() / "result" / self.experiment_name
-        if result_directory.exists():
-            for directory in result_directory.iterdir():
-                if directory.is_dir() and directory.name.endswith(self.run_id):
-                    return directory
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        run_directory = result_directory / f"{timestamp}_{self.run_name}_{self.run_id}"
-        run_directory.mkdir(parents=True, exist_ok=True)
-        return run_directory

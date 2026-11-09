@@ -1,11 +1,14 @@
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import genesis as gs
 import torch
+from genesis.utils.geom import transform_by_quat, transform_quat_by_quat
 
 from robot_student.engine.genesis_engine import GenesisEngine
+from robot_student.engine.robot_state import RobotState
 from robot_student.motion.motion_clip import MotionClip
 from robot_student.util.logging import configure_logging
 
@@ -23,6 +26,7 @@ class MotionClipPlayer:
     recording_camera_position: tuple[float, float, float] = (3.5, 0.5, 2.5)
     recording_resolution: tuple[int, int] = (1280, 720)
     recording_fps: int = 30
+    motion_yaw_degrees: float = 0.0  # Rotate about world Z through the first root position.
 
     @torch.inference_mode()
     def run(self) -> None:
@@ -57,6 +61,8 @@ class MotionClipPlayer:
         engine.build_scene()
 
         frames = motion_clip.frames.to(engine.device)
+        if self.motion_yaw_degrees != 0.0:
+            frames = _rotate_motion_frames(frames, self.motion_yaw_degrees)
         logger = logging.getLogger(__name__)
         logger.info(
             "Playing %s (%d frames at %d Hz)",
@@ -92,3 +98,19 @@ class MotionClipPlayer:
         finally:
             if self.recording_path is not None:
                 engine.stop_recording()
+
+
+def _rotate_motion_frames(frames: RobotState, yaw_degrees: float) -> RobotState:
+    """Rotate a motion about world Z at its first root position, preserving joint coordinates."""
+    half_angle = math.radians(yaw_degrees) / 2
+    rotation = frames.root_rotation.new_tensor((math.cos(half_angle), 0.0, 0.0, math.sin(half_angle)))
+    pivot = frames.root_position[0]
+    rotated_frames = frames.clone()
+    for name in ("root_position", "world_link_positions"):
+        positions = getattr(frames, name)
+        setattr(rotated_frames, name, transform_by_quat(positions - pivot, rotation) + pivot)
+    for name in ("root_rotation", "world_link_rotations"):
+        setattr(rotated_frames, name, transform_quat_by_quat(getattr(frames, name), rotation))
+    for name in ("root_velocity", "root_angular_velocity", "world_link_linear_velocities", "world_link_angular_velocities"):
+        setattr(rotated_frames, name, transform_by_quat(getattr(frames, name), rotation))
+    return rotated_frames

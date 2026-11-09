@@ -8,7 +8,7 @@ from tensordict import TensorDict, TensorDictBase
 from torch import nn
 
 from robot_student.model.action import ActionBoundEnforcement, PositionTargetMode
-from robot_student.model.distribution import ActionDistribution
+from robot_student.model.distribution import ActionDistribution, transform_action_mean
 from robot_student.model.normalizer import RunningNormalization
 from robot_student.schema import EnvironmentSchema
 
@@ -138,8 +138,15 @@ class Policy(nn.Module):
 
     def sample_action(self, observation: TensorDictBase, stochastic: bool = True) -> TensorDictBase:
         mean = self(observation)
-        distribution = self.create_distribution(mean)
-        action = distribution.sample() if stochastic else distribution.action_mean
+        if stochastic:
+            action = self.create_distribution(mean).sample()
+        else:
+            action = transform_action_mean(
+                mean + self.normalized_mean_offset,
+                self.action_offset,
+                self.action_scale,
+                self.action_bound_enforcement,
+            )
         return TensorDict({self.action_key: action}, batch_size=observation.batch_size, device=action.device)
 
     def sample_action_with_log_prob(self, observation: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor]:

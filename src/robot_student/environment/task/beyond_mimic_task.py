@@ -7,6 +7,7 @@ from genesis.utils.geom import inv_quat, inv_transform_by_quat, transform_by_qua
 from tensordict import TensorClass
 
 from robot_student.engine.robot import Robot
+from robot_student.engine.robot_state import RobotState
 from robot_student.environment.sensors import IMUSensor, RotationSensor, Sensor
 from robot_student.environment.task.motion_tracking_task import MotionTrackingTask, ResetPerturbationConfiguration
 from robot_student.environment.task.task import TaskEvaluation
@@ -220,17 +221,20 @@ class BeyondMimicTask(MotionTrackingTask):
         }
         return {key: TensorSchema(shape=(size,), data_type=torch.float32) for key, size in sizes.items()}
 
-    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
-        simulator_observation = self._simulator_observation
+    def _motion_command(self, state: RobotState) -> torch.Tensor:
         # Reference backlash positions and velocities are zero, so motor values are the desired encoder readings.
         servo_joints = self._robot.servo_joints
-        motion_command = torch.cat(
+        return torch.cat(
             (
-                servo_joints.select_motor_joint_values(self._reference_state.joint_dof_positions),
-                servo_joints.select_motor_joint_values(self._reference_state.joint_dof_velocities),
+                servo_joints.select_motor_joint_values(state.joint_dof_positions),
+                servo_joints.select_motor_joint_values(state.joint_dof_velocities),
             ),
             dim=-1,
         )
+
+    def observation(self, *, previous_action: torch.Tensor) -> dict[str, torch.Tensor]:
+        simulator_observation = self._simulator_observation
+        motion_command = self._motion_command(self._reference_state)
 
         inverse_anchor_rotation = inv_quat(simulator_observation.imu_rotation)
         imu_angular_velocity = transform_by_quat(simulator_observation.imu_angular_velocity, inverse_anchor_rotation)

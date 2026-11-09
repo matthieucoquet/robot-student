@@ -4,6 +4,17 @@ from torch.distributions import transforms
 from robot_student.model.action import ActionBoundEnforcement
 
 
+def transform_action_mean(
+    mean: torch.Tensor,
+    action_offset: torch.Tensor,
+    action_scale: torch.Tensor,
+    action_bound_enforcement: ActionBoundEnforcement,
+) -> torch.Tensor:
+    if action_bound_enforcement is ActionBoundEnforcement.TANH_DISTRIBUTION:
+        mean = torch.tanh(mean)
+    return action_offset + action_scale * mean
+
+
 class ActionDistribution(torch.distributions.Independent):
     def __init__(
         self,
@@ -18,15 +29,13 @@ class ActionDistribution(torch.distributions.Independent):
         self._action_scale = action_scale
         self._tanh_transform = None
         distribution_transforms: list[transforms.Transform] = []
-        self.action_mean = mean
+        self.action_mean = transform_action_mean(mean, action_offset, action_scale, action_bound_enforcement)
 
         if action_bound_enforcement is ActionBoundEnforcement.TANH_DISTRIBUTION:
             self._tanh_transform = transforms.TanhTransform(cache_size=1)
             distribution_transforms.append(self._tanh_transform)
-            self.action_mean = torch.tanh(self.action_mean)
 
         distribution_transforms.append(transforms.AffineTransform(loc=action_offset, scale=action_scale))
-        self.action_mean = action_offset + action_scale * self.action_mean
 
         distribution = torch.distributions.TransformedDistribution(distribution, distribution_transforms)
 

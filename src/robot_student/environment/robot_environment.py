@@ -42,19 +42,19 @@ class RobotEnvironment(Environment):
         push_configuration: PushConfiguration | None = None,
     ) -> None:
         self._engine = engine
-        self._task = task
+        self.task = task
         self._simulation_steps_per_control_step = engine.simulation_frequency // control_frequency
         self._engine.add_ground_plane(friction=ground_friction)
-        self._robot = engine.add_robot(
+        self.robot = engine.add_robot(
             xml_path,
             control_mode=control_mode,
             domain_randomization_configuration=domain_randomization_configuration,
             command_delay_configuration=command_delay_configuration,
         )
-        engine.follow_robot_for_recording(self._robot)
+        engine.follow_robot_for_recording(self.robot)
 
         device = engine.device
-        self._task.setup_scene(engine)
+        self.task.setup_scene(engine)
         self._engine.build_scene(env_spacing=(2.0, 2.0))
 
         initial_pose_tensor = torch.tensor(
@@ -62,15 +62,15 @@ class RobotEnvironment(Environment):
             dtype=torch.float32,
             device=device,
         )
-        expected_shape = (self._robot.n_qs,)
+        expected_shape = (self.robot.n_qs,)
         if initial_pose_tensor.shape != expected_shape:
             raise ValueError(f"initial_pose must have shape {expected_shape}, got {tuple(initial_pose_tensor.shape)}")
         batched_initial_pose = initial_pose_tensor.expand(engine.environment_count, -1).contiguous()
-        self._robot.set_default_pose(batched_initial_pose)
+        self.robot.set_default_pose(batched_initial_pose)
         self._engine.register_initial_pose()
 
-        self._task.initialize(
-            robot=self._robot,
+        self.task.initialize(
+            robot=self.robot,
             simulation_steps_per_control_step=self._simulation_steps_per_control_step,
         )
 
@@ -78,8 +78,8 @@ class RobotEnvironment(Environment):
         self._maximum_episode_steps = maximum_episode_steps
         self._episode_step_count = torch.zeros(self.count, device=device, dtype=torch.int64)
         # Starts at the default pose
-        self._previous_action = self._robot.default_control.expand(self.count, -1).clone()
-        # self._task.capture(reset=True)
+        self._previous_action = self.robot.default_control.expand(self.count, -1).clone()
+        # self.task.capture(reset=True)
         self._push_configuration = push_configuration
         self._push_interval_steps = 0
         if push_configuration is not None:
@@ -105,10 +105,10 @@ class RobotEnvironment(Environment):
     def reset(self) -> TensorDictBase:
         self._episode_step_count.zero_()
         self._steps_until_push = self._push_interval_steps
-        self._previous_action.copy_(self._robot.default_control)
+        self._previous_action.copy_(self.robot.default_control)
 
         self._engine.reset()
-        self._task.reset(environment_indices=torch.arange(self._engine.environment_count, device=self.device, dtype=torch.int64))
+        self.task.reset(environment_indices=torch.arange(self._engine.environment_count, device=self.device, dtype=torch.int64))
         self._engine.reset_recording_camera()
         return self._get_observation()
 
@@ -120,27 +120,27 @@ class RobotEnvironment(Environment):
             # TODO need to profile to see if this is a bottleneck
             # For tracker, calling the engine reset might not be needed.
             self._engine.reset(environment_indices=environment_indices)
-            self._task.reset(environment_indices)
+            self.task.reset(environment_indices)
 
             self._engine.reset_recording_camera(environment_indices)
             self._episode_step_count.masked_fill_(done, 0)
-            self._previous_action[environment_indices] = self._robot.default_control
+            self._previous_action[environment_indices] = self.robot.default_control
         return self._get_observation()
 
     @torch.no_grad()
     def step(self, action: TensorDictBase) -> tuple[TensorDictBase, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         current_action = action["control"].detach()
         self._apply_push()
-        self._robot.apply_control(current_action)
+        self.robot.apply_control(current_action)
 
         for i in range(self._simulation_steps_per_control_step):
             self._engine.update_actuators()
-            self._task.step(is_control_step=i == 0)
+            self.task.step(is_control_step=i == 0)
             self._engine.step()
 
-        self._task.measure_state()
+        self.task.measure_state()
         self._episode_step_count.add_(1)
-        step_evaluation = self._task.evaluate_step(
+        step_evaluation = self.task.evaluate_step(
             current_action=current_action,
             previous_action=self._previous_action,
         )
@@ -160,14 +160,14 @@ class RobotEnvironment(Environment):
         linear_velocity_offset.mul_(self._linear_push_half_widths)
         angular_velocity_offset = self._angular_push_half_widths.new_empty((self.count, 3)).uniform_(-1.0, 1.0)
         angular_velocity_offset.mul_(self._angular_push_half_widths)
-        self._robot.add_root_velocity(
+        self.robot.add_root_velocity(
             linear_velocity_offset=linear_velocity_offset,
             angular_velocity_offset=angular_velocity_offset,
         )
         self._steps_until_push = self._push_interval_steps
 
     def _compute_schema(self) -> EnvironmentSchema:
-        observations = self._task.get_schema()
+        observations = self.task.get_schema()
 
         return EnvironmentSchema(
             observations=observations,
@@ -176,14 +176,14 @@ class RobotEnvironment(Environment):
 
     def _get_control_schema(self) -> TensorSchema:
         return TensorSchema(
-            shape=(self._robot.n_controlled_dofs,),
+            shape=(self.robot.n_controlled_dofs,),
             data_type=torch.float32,
-            bounds=self._robot.control_bounds,
-            default_value=self._robot.default_control,
-            action_scale=self._robot.control_action_scale,
+            bounds=self.robot.control_bounds,
+            default_value=self.robot.default_control,
+            action_scale=self.robot.control_action_scale,
         )
 
     def _get_observation(self) -> TensorDictBase:
-        observation = self._task.observation(previous_action=self._previous_action)
+        observation = self.task.observation(previous_action=self._previous_action)
         first_tensor = next(iter(observation.values()))
         return TensorDict(observation, batch_size=first_tensor.shape[:-1], device=first_tensor.device)

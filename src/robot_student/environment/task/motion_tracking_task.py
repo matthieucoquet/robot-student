@@ -36,7 +36,7 @@ class MotionTrackingTask(Task):
     ) -> None:
         super().__init__()
         self._xml_path = xml_path
-        self._motion_library = motion_library
+        self.motion_library = motion_library
         self._reference_motion_offset = reference_motion_offset
         self._key_link_names = key_link_names
         self._show_reference_motion = show_reference_motion
@@ -55,13 +55,13 @@ class MotionTrackingTask(Task):
 
         self._reference_robot = ReferenceRobot(
             engine.environment_count,
-            self._motion_library,
+            self.motion_library,
             engine.time_step,
             engine.device,
             kinematic_robot=self._kinematic_robot,
             display_offset=self._reference_motion_offset,
         )
-        self._reference_state = self._motion_library.get_state(
+        self._reference_state = self.motion_library.get_state(
             torch.zeros(engine.environment_count, dtype=torch.int64, device=engine.device),
             torch.zeros(engine.environment_count, dtype=torch.float32, device=engine.device),
         )
