@@ -90,6 +90,10 @@ class RobotEnvironment(Environment):
         self._steps_until_push = self._push_interval_steps
 
     @property
+    def control_frequency(self) -> float:
+        return self._engine.simulation_frequency / self._simulation_steps_per_control_step
+
+    @property
     def device(self) -> torch.device:
         return self._engine.device
 

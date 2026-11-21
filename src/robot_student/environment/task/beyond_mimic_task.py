@@ -47,22 +47,15 @@ class BeyondMimicSensors:
 # Differences from upstream BeyondMimic: motion completion ends the episode;
 # observation noise perturbs measurements before feature construction, rather than observation terms directly.
 class BeyondMimicTask(MotionTrackingTask):
-    """Track reference motion with encoder and IMU observations and clean measurements for the critic and costs.
-
-    The anchor link also carries the IMU. Angular velocity and projected gravity use its frame;
-    root linear velocity uses the root frame. Named measured and simulated features are kept separate;
-    motion commands and previous actions are shared by the actor and critic.
-    """
-
     actor_observation_keys = (
         "motion_command",
-        "measured_anchor_position_error",
-        "measured_anchor_rotation_error",
-        "measured_root_linear_velocity",
-        "measured_imu_angular_velocity",
-        "measured_projected_gravity",
-        "measured_servo_encoder_position_offsets",
-        "measured_servo_encoder_velocities",
+        "anchor_position_error",
+        "anchor_rotation_error",
+        "root_linear_velocity",
+        "imu_angular_velocity",
+        "projected_gravity",
+        "servo_encoder_position_offsets",
+        "servo_encoder_velocities",
         "previous_action",
     )
     critic_observation_keys = (
@@ -110,7 +103,7 @@ class BeyondMimicTask(MotionTrackingTask):
             reset_perturbation_configuration=reset_perturbation_configuration,
             soft_joint_position_limit_factor=soft_joint_position_limit_factor,
         )
-        self._anchor_link_name = anchor_link_name
+        self.anchor_link_name = anchor_link_name
         self._end_effector_link_names = end_effector_link_names
         self._contact_force_threshold = contact_force_threshold
         self._tracking_position_variance = tracking_position_tolerance**2
@@ -131,7 +124,7 @@ class BeyondMimicTask(MotionTrackingTask):
         servo_joints = self._robot.servo_joints
         self._soft_encoder_position_lower_bounds = servo_joints.select_motor_joint_values(self._soft_joint_position_lower_bounds)
         self._soft_encoder_position_upper_bounds = servo_joints.select_motor_joint_values(self._soft_joint_position_upper_bounds)
-        self._anchor_link_index = self._robot.get_link_indices([self._anchor_link_name])[0]
+        self._anchor_link_index = self._robot.get_link_indices([self.anchor_link_name])[0]
         end_effector_link_indices = self._robot.get_link_indices(self._end_effector_link_names)
         self._end_effector_link_indices = torch.tensor(end_effector_link_indices, dtype=torch.int64, device=self._key_link_indices.device)
         self._penalized_contact_link_indices = torch.tensor(
@@ -214,7 +207,8 @@ class BeyondMimicTask(MotionTrackingTask):
         }
         sizes = {
             "motion_command": 2 * joint_count,
-            **{f"{source}_{name}": size for source in ("measured", "simulated") for name, size in component_sizes.items()},
+            **component_sizes,
+            **{f"simulated_{name}": size for name, size in component_sizes.items()},
             "simulated_link_positions": 3 * link_count,
             "simulated_link_rotations": 6 * link_count,
             "previous_action": joint_count,
@@ -239,27 +233,27 @@ class BeyondMimicTask(MotionTrackingTask):
         inverse_anchor_rotation = inv_quat(simulator_observation.imu_rotation)
         imu_angular_velocity = transform_by_quat(simulator_observation.imu_angular_velocity, inverse_anchor_rotation)
         projected_gravity = transform_by_quat(self._world_gravity, inverse_anchor_rotation)
-        measured_imu_angular_velocity = imu_angular_velocity
-        measured_projected_gravity = projected_gravity
+        sensor_angular_velocity = imu_angular_velocity
+        sensor_projected_gravity = projected_gravity
         if not self._sensors.imu.is_passthrough:
             # Sensor buffers are reused; observations must remain stable until copied into rollout storage.
-            measured_imu_angular_velocity = self._sensors.imu.angular_velocity.clone()
-            measured_projected_gravity = self._sensors.imu.projected_gravity.clone()
+            sensor_angular_velocity = self._sensors.imu.angular_velocity.clone()
+            sensor_projected_gravity = self._sensors.imu.projected_gravity.clone()
 
-        measured_components = self._observation_components(
-            prefix="measured",
+        sensor_components = self._observation_components(
+            prefix="",
             anchor_position=self._sensors.anchor_position.observation,
             inverse_anchor_rotation=inv_quat(self._sensors.anchor_rotation.observation),
             root_velocity=self._sensors.root_velocity.observation,
-            imu_angular_velocity=measured_imu_angular_velocity,
-            projected_gravity=measured_projected_gravity,
+            imu_angular_velocity=sensor_angular_velocity,
+            projected_gravity=sensor_projected_gravity,
             servo_encoder_positions=self._sensors.servo_encoder_positions.observation,
             servo_encoder_velocities=self._sensors.servo_encoder_velocities.observation,
         )
 
         anchor_position = simulator_observation.world_link_positions[..., self._anchor_link_index, :]
         simulated_components = self._observation_components(
-            prefix="simulated",
+            prefix="simulated_",
             anchor_position=anchor_position,
             inverse_anchor_rotation=inverse_anchor_rotation,
             root_velocity=simulator_observation.root_velocity,
@@ -280,7 +274,7 @@ class BeyondMimicTask(MotionTrackingTask):
 
         return {
             "motion_command": motion_command,
-            **measured_components,
+            **sensor_components,
             **simulated_components,
             "simulated_link_positions": link_positions,
             "simulated_link_rotations": link_rotations,
@@ -309,13 +303,13 @@ class BeyondMimicTask(MotionTrackingTask):
         servo_encoder_position_offsets = servo_encoder_positions - self._robot.default_encoder_positions
 
         return {
-            f"{prefix}_anchor_position_error": anchor_position_error,
-            f"{prefix}_anchor_rotation_error": anchor_rotation_error,
-            f"{prefix}_root_linear_velocity": root_linear_velocity,
-            f"{prefix}_imu_angular_velocity": imu_angular_velocity,
-            f"{prefix}_projected_gravity": projected_gravity,
-            f"{prefix}_servo_encoder_position_offsets": servo_encoder_position_offsets,
-            f"{prefix}_servo_encoder_velocities": servo_encoder_velocities.clone(),
+            f"{prefix}anchor_position_error": anchor_position_error,
+            f"{prefix}anchor_rotation_error": anchor_rotation_error,
+            f"{prefix}root_linear_velocity": root_linear_velocity,
+            f"{prefix}imu_angular_velocity": imu_angular_velocity,
+            f"{prefix}projected_gravity": projected_gravity,
+            f"{prefix}servo_encoder_position_offsets": servo_encoder_position_offsets,
+            f"{prefix}servo_encoder_velocities": servo_encoder_velocities.clone(),
         }
 
     def _compute_reward(

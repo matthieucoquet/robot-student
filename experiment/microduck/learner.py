@@ -63,13 +63,13 @@ def get_beyond_mimic_ppo_factory(*, compile_models: bool = False) -> PPOFactory:
     configuration = get_ppo_factory(
         actor_observation_keys=(
             "motion_command",
-            # "measured_anchor_position_error",
-            "measured_anchor_rotation_error",
-            # "measured_root_linear_velocity",
-            "measured_imu_angular_velocity",
-            "measured_projected_gravity",
-            "measured_servo_encoder_position_offsets",
-            "measured_servo_encoder_velocities",
+            # "anchor_position_error",
+            "anchor_rotation_error",
+            # "root_linear_velocity",
+            "imu_angular_velocity",
+            "projected_gravity",
+            "servo_encoder_position_offsets",
+            "servo_encoder_velocities",
             "previous_action",
         ),
         critic_observation_keys=(

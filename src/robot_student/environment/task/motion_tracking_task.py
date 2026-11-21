@@ -38,7 +38,7 @@ class MotionTrackingTask(Task):
         self._xml_path = xml_path
         self.motion_library = motion_library
         self._reference_motion_offset = reference_motion_offset
-        self._key_link_names = key_link_names
+        self.key_link_names = tuple(key_link_names)
         self._show_reference_motion = show_reference_motion
         self._soft_joint_position_limit_factor = soft_joint_position_limit_factor
         self._reset_perturbation_configuration = reset_perturbation_configuration
@@ -75,7 +75,7 @@ class MotionTrackingTask(Task):
     ) -> None:
         self._robot = robot
         self._key_link_indices = torch.tensor(
-            self._robot.get_link_indices(self._key_link_names),
+            self._robot.get_link_indices(self.key_link_names),
             dtype=torch.int64,
             device=robot.default_control.device,
         )
